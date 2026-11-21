@@ -73,9 +73,7 @@
  },
  "stock_functions": {
   "dlsym": "0x17166a0",
-  "native_mode": "0x28ecdf8",
-  "layout_state": "0x28facdc",
-  "layout_request": "0x35994dc"
+  "native_mode": "0x28ecdf8"
  },
  "hooks": [
   {
