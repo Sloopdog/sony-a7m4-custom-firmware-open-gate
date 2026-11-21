@@ -1,0 +1,30 @@
+{
+ "schema": 1,
+ "what": "Open gate on Erlla custom firmware v0.1.3: exact inputs, the new appFw.so sections and the stock functions the module calls.",
+ "base_package": {"name": "BODYDATA.DAT (A7M4-ToolKit-v0.1.3)", "sha256": "cfb7929594f3f0a770b9fbecaff1269cd945bc0932e3ddbabf73050f8eda475f"},
+ "inputs": {
+  "nflasha15:lib/appFw.so": "c5f9bc7c6e0401b92a3b244122f3e013f61db4ae0ba2e423f02b2760adccf5fc",
+  "nflasha15:lib/libmpr.so": "cdce68c65813c8492a2268ec7364276d6f4e54495d5d8b0bacfeaf4d96cc708f",
+  "nflasha8:CPAPP-B.BIN": "cebf825e159fbf6974dbbf95a5e987d18b7db8526a98a96130257a2b808ae5da",
+  "nflasha8:DMMCFG.BIN": "7e7c09a3bb6922d5a1e5cfbddd29600b2fbc709264ac40bbde35b3f5ea2c54fd",
+  "nflasha3:av-cam.bin": "3e881a3d9db8644c63a6d9fb9723d04c024d8e17b670c0d1635cd020459dd49f"
+ },
+ "appfw": {
+  "input_bytes": 99221508,
+  "free_gap": {"file_offset": "0x5e72500", "end": "0x5e80000", "bytes": 56064},
+  "program_headers": {"file_offset": "0x5e80000", "entries": 15, "free_entries": 3},
+  "rx": {"va": "0x9063000", "file_offset": "0x5e73000", "max_bytes": "0xc000"},
+  "rw": {"va": "0x907f000", "file_offset": "0x5e7f000", "max_bytes": "0x1000"}
+ },
+ "stock_functions": {
+  "dlsym": "0x17166a0",
+  "native_mode": "0x28ecdf8",
+  "layout_state": "0x28facdc",
+  "layout_request": "0x35994dc"
+ },
+ "open": [
+  "startup hook: chain onto the aspect feature's shooting-screen creation hooks 0x1ddab68 / 0x1e56b2c (verify their v0.1.3 targets first)",
+  "av-cam.bin physical base and libmpr.so base lookup: read from libJit_level19_ogfile57r300_v1.so",
+  "menu registrars and availability chain: custom-sounds pattern (methods/06-custom-sounds/IMPLEMENTATION.md)"
+ ]
+}
