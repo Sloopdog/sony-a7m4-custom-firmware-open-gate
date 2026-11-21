@@ -16,7 +16,8 @@ from pathlib import Path
 import pytest
 
 from a7m4.common import ToolError
-from a7m4.open_gate import Module, _config_header, _linker_script, build, compose_ap
+from a7m4.open_gate import (Module, _config_header, _edit_bank, _edit_banks, _linker_script, _uxc_records, _uxc_texts,
+                            build, compile_module, compose_ap)
 from a7m4.open_gate_sites import (_CP_IMAGE_VA, _NATIVE, PRESETS, _ROOT, STEP1, _STORED_RECORD, Family, Mode, Run, SiteImage,
                                   Space, check_stock, compile_image, dmmcfg_edits, _layout, load_design, runs_of)
 
@@ -180,6 +181,12 @@ def test_generated_config_and_linker_script_follow_layout():
     script = _linker_script(lay)
     assert ".text 0x9063000" in script and ".bss 0x907f000" in script
     assert "hook_first_previous = 0x9012bd8;" in script and "dlsym = 0x17166a0;" in script
+    assert "#define OG_MENU_MID 1600\n" in header and "#define OG_MENU_ALIAS_BASE 5638\n" in header
+    assert "#define OG_MENU_TEXT_TITLE 0x0200ab51\n" in header and "#define OG_MENU_TEXT_OFF 0x0200a00f\n" in header
+    for line in ("og_menu_previous_options = 0x90108b8;", "og_menu_previous_blocked = 0x8fb877c;",
+                 "og_native_register_leaf = 0x1cd0d90;", "og_native_map_alias = 0x7614328;", "og_native_true = 0x1c9efbc;",
+                 "og_menu_apply_custom = 0x1c15604;"):
+        assert line in script, line
 
 
 def build_args(tmp_path, **overrides):
@@ -440,3 +447,336 @@ def test_og_mem_on_the_host(image, tmp_path):
     result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ok read above the cached page" in result.stdout and "ok detect pal, chain ascending" in result.stdout
+
+
+# --- PR 2: the Open Gate menu item -----------------------------------------------------------------------------------
+
+APP = DEV / "nflasha15_unpacked/share/app"
+APPFW = DEV / "nflasha15_unpacked/lib/appFw.so"
+STOCK_APP = Path(os.environ.get("OG_602_DEV", WORKSPACE / "unpacked/BODYDATA-6.02/firmware.tar_unpacked/0700_part_image/dev")) \
+    / "nflasha15_unpacked/share/app"
+ZIG = Path(os.environ.get("OG_ZIG", WORKSPACE / "tools/zig-aarch64-macos-0.15.2/zig"))
+MENU = _layout()["menu"]
+MID, ALIAS = MENU["mid"], MENU["alias_base"]
+TEXT = {k: int(v, 16) for k, v in MENU["text"].items()}
+OPTION_TEXT = (TEXT["off"], TEXT["uhd_32"], TEXT["k57_32"])
+# The template fields og_menu.c changes from v0.1.3's Volume records (layout.json "menu"."templates").
+LEAF_PATCHES = {0x00: TEXT["title"], 0x0c: 0xffffffff, 0x14: 0xca4, 0x54: 3, 0x60: 0xffffffff, 0xbc: 0xca4}
+ROW_PATCHES = {0x10: 0xffffffff, 0x20: 0xffffffff, 0x24: 0xffffffff}   # plus alias, text and value per row
+PROFILE_PATCHES = {0x00: MID}
+# Volume's pointer fields and the symbols that replace them.
+LEAF_POINTERS = {0x58: (0x8ff8160, "rows"), 0x70: (0x1c9efbc, "og_native_true"), 0x78: (0x8fb8668, "og_menu_getter"),
+                 0x80: (0x8fb86b4, "og_menu_setter"), 0x88: (0x8fb86ec, "og_menu_commit"),
+                 0xa8: (0x8f98430, "og_menu_default")}
+PROFILE_POINTERS = {0x48: (0x1c9efbc, "og_native_true"), 0x50: (0x8fb876c, "og_menu_profile_blocked")}
+
+needs_appfw = pytest.mark.skipif(not APPFW.is_file(), reason="no v0.1.3 tree")
+
+
+class Image:
+    """v0.1.3's appFw.so (or a composed one) by VA, with its R_AARCH64_RELATIVE table."""
+
+    def __init__(self, data):
+        import io
+        import numpy as np
+        from elftools.elf.elffile import ELFFile
+        self.data = data
+        self.elf = ELFFile(io.BytesIO(data))
+        self.loads = [s for s in self.elf.iter_segments() if s["p_type"] == "PT_LOAD"]
+        rela = self.elf.get_section_by_name(".rela.dyn")
+        self.rela = np.frombuffer(data, dtype="<u8", count=rela["sh_size"] // 8, offset=rela["sh_offset"]).reshape(-1, 3)
+
+    def offset(self, va):
+        s = next(s for s in self.loads if s["p_vaddr"] <= va < s["p_vaddr"] + s["p_filesz"])
+        return s["p_offset"] + va - s["p_vaddr"]
+
+    def bytes(self, va, n):
+        return self.data[self.offset(va):self.offset(va) + n]
+
+    def u32(self, va):
+        return struct.unpack("<I", self.bytes(va, 4))[0]
+
+    def relative(self, va):
+        rows = self.rela[(self.rela[:, 0] == va) & (self.rela[:, 1] == 1027)]
+        return int(rows[0, 2]) if len(rows) else None
+
+    def branch(self, va):
+        word = self.u32(va)
+        imm = word & 0x3ffffff
+        return {0x94000000: "bl", 0x14000000: "b"}.get(word & 0xfc000000), va + 4 * (imm - ((imm & 0x2000000) << 1))
+
+    def table(self, base, entries, stride):
+        return [self.u32(base + stride * i) for i in range(entries)]
+
+
+@pytest.fixture(scope="module")
+def v013():
+    if not APPFW.is_file():
+        pytest.skip("no v0.1.3 tree")
+    data = APPFW.read_bytes()
+    assert hashlib.sha256(data).hexdigest() == _layout()["inputs"]["nflasha15:lib/appFw.so"]
+    return Image(data)
+
+
+def patched(record, patches):
+    out = bytearray(record)
+    for at, value in patches.items():
+        struct.pack_into("<I", out, at, value)
+    return bytes(out)
+
+
+def parse_record(text):
+    """og_menu_host's record dump: bytes, with '<symbol>' for each pointer field -> (bytes with zeros, {offset: symbol})."""
+    out, pointers, i = bytearray(), {}, 0
+    while i < len(text):
+        if text[i] == "<":
+            end = text.index(">", i)
+            pointers[len(out)] = text[i + 1:end]
+            out.extend(bytes(8))
+            i = end + 1
+        else:
+            out.append(int(text[i:i + 2], 16))
+            i += 2
+    return bytes(out), pointers
+
+
+@pytest.fixture(scope="module")
+def menu_host(tmp_path_factory):
+    clang = shutil.which("clang") or shutil.which("cc")
+    if not clang:
+        pytest.skip("no host C compiler")
+    tmp = tmp_path_factory.mktemp("og_menu_host")
+    (tmp / "og_config.h").write_text(_config_header(_layout(), RECORD))
+    binary = tmp / "og_menu_host"
+    subprocess.run([clang, "-std=c11", "-D_DEFAULT_SOURCE", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-fno-strict-aliasing",
+                    "-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-I", str(_NATIVE), "-I", str(tmp),
+                    str(_ROOT / "tests/native/og_menu_host.c"), str(_NATIVE / "og_menu.c"), "-o", str(binary)], check=True)
+    result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = result.stdout.splitlines()
+    assert not [line for line in lines if line.startswith("FAIL")]
+    maps = {w[1]: [tuple(e.split(",")) for e in w[3:]] for w in (line.split() for line in lines) if w[0] == "map"}
+    records = {w[1]: parse_record(w[2]) for w in (line.split() for line in lines) if w[0] == "record"}
+    return lines, maps, records
+
+
+def test_og_menu_callbacks_on_the_host(menu_host):
+    lines, _, _ = menu_host
+    for check in ("getter reflects og_selected", "setter stages the browsed value", "commit selects the option's mode",
+                  "commit reports any other status as failure", "a failed commit drops the staged value",
+                  "commit refuses an alias below the item's", "commit refuses an alias above the item's",
+                  "blocked is 1 exactly in movie", "the profile callback agrees", "blocked is 0 without a dial",
+                  "the item never reaches the previous check", "other mids chain to the previous check"):
+        assert f"ok {check}" in lines, check
+    assert lines.count("ok commit reports any other status as failure") == 7   # OG_BUSY .. OG_NOT_SAVED
+
+
+def test_og_menu_registers_the_item_in_six_maps(menu_host):
+    _, maps, _ = menu_host
+    aliases = [str(ALIAS + i) for i in range(3)]
+    assert maps["leaf"] == [(str(MID), "leaf")] and maps["profile"] == [(str(MID), "profile")]
+    assert maps["option"] == [(a, f"row{i}") for i, a in enumerate(aliases)]
+    assert maps["parent"] == [(a, str(MID)) for a in aliases]
+    assert maps["value"] == maps["alias"] == [(a, a) for a in aliases]
+
+
+@needs_appfw
+def test_og_menu_records_are_volumes_with_the_listed_fields_changed(menu_host, v013):
+    _, _, records = menu_host
+    templates = {k: int(v, 16) for k, v in MENU["templates"].items() if k != "what"}
+    volume_leaf, volume_row = v013.bytes(templates["leaf"], 0xc0), v013.bytes(templates["option"], 0x80)
+    volume_profile = v013.bytes(templates["profile"], 0x80)
+    for record, pointers in ((volume_leaf, LEAF_POINTERS), (volume_profile, PROFILE_POINTERS)):
+        base = templates["leaf"] if record is volume_leaf else templates["profile"]
+        for at, (target, _) in pointers.items():
+            assert struct.unpack_from("<Q", record, at)[0] == target and v013.relative(base + at) == target
+    leaf, leaf_pointers = records["leaf"]
+    assert leaf_pointers == {at: name for at, (_, name) in LEAF_POINTERS.items()}
+    blank = {at: 0 for at in LEAF_POINTERS} | {at + 4: 0 for at in LEAF_POINTERS}
+    assert leaf == patched(volume_leaf, blank | LEAF_PATCHES)
+    for i in range(3):
+        row, row_pointers = records[f"row{i}"]
+        assert not row_pointers
+        assert row == patched(volume_row, ROW_PATCHES | {0x00: ALIAS + i, 0x04: ALIAS + i, 0x08: OPTION_TEXT[i], 0x34: i})
+    profile, profile_pointers = records["profile"]
+    assert profile_pointers == {at: name for at, (_, name) in PROFILE_POINTERS.items()}
+    blank = {at: 0 for at in PROFILE_POINTERS} | {at + 4: 0 for at in PROFILE_POINTERS}
+    assert profile == patched(volume_profile, blank | PROFILE_PATCHES)
+
+
+@needs_appfw
+def test_menu_ids_are_unused_in_v013(v013):
+    """The mid and aliases are in no native table, no custom-firmware registration and no menu group."""
+    leaves = set(v013.table(0x50d6f80, 1473, 16)) | {1589, 1591, 1593, 1594, 1596, 1597, 1598, 1599}
+    profiles = set(v013.table(0x50f2900, 820, 16)) | {1589, 1591} | set(range(1592, 1600))
+    pages = set(v013.table(0x50f5c40, 116, 16)) | {1592, 1595}
+    assert MID not in leaves | profiles | pages and max(leaves) < MID
+    custom = {0x8f6ce70: 16, 0x8fc0a80: 4, 0x8ff8e00: 20, 0x9020400: 4}   # LUT, sounds, volume, aspect option rows
+    options = set(range(5591)) | {a for base, n in custom.items() for a in v013.table(base, n, 16)} | set(range(5631, 5638))
+    assert not {ALIAS, ALIAS + 1, ALIAS + 2} & options and max(options) < ALIAS
+    for base in (0x3eb07a0, 0x3edbf78, 0x3ee6e30):   # native parent, value and alias tables
+        assert not {ALIAS, ALIAS + 1, ALIAS + 2} & set(v013.table(base, 5591, 8))
+    tree, tabs = 0x50f6380, v013.u32(0x50f6380)
+    for tab in range(tabs):
+        for g in range(v013.u32(tree + 8 + tab * 0x2e10 + 8)):
+            group = tree + 8 + tab * 0x2e10 + 16 + g * 0x2e0
+            assert MID not in v013.table(group + 16, v013.u32(group + 8), 24)
+
+
+@needs_appfw
+def test_image_quality_rec_has_no_free_slot(v013):
+    """Why placement is open: the group File Format sits in holds all 30 of its fixed slots."""
+    shooting = 0x50f6380 + 8 + 2 * 0x2e10
+    group = shooting + 16
+    assert v013.u32(shooting) == 2 and v013.u32(group + 4) == 0x0200606e   # tab 'Shooting', group 'Image Quality/Rec'
+    assert v013.u32(group + 8) == 30 and 16 + 30 * 24 == 0x2e0
+    assert 27 in v013.table(group + 16, 30, 24) and 34 in v013.table(group + 16, 30, 24)   # both File Format items
+
+
+@pytest.fixture(scope="module")
+def composed(image, v013, tmp_path_factory):
+    if not ZIG.is_file():
+        pytest.skip("pinned Zig not available")
+    module = compile_module(ZIG, image, tmp_path_factory.mktemp("og_module") / "module")
+    return module, Image(compose_ap(v013.data, module, _layout()))
+
+
+def test_composed_appfw_changes_only_the_listed_places(composed, v013):
+    import numpy as np
+    module, out = composed
+    differ = np.flatnonzero(np.frombuffer(v013.data, np.uint8) != np.frombuffer(out.data, np.uint8))
+    hooks = [v013.offset(int(h["va"], 16)) for h in _layout()["hooks"]]
+    allowed = [(0x38, 0x3a), (0x5e73000, 0x5e73000 + len(module.text)), (0x5e80000, 0x5e80000 + 17 * 56)]
+    allowed += [(at, at + 4) for at in hooks]
+    assert all(any(lo <= int(i) < hi for lo, hi in allowed) for i in differ)
+    assert {v013.offset(int(h["va"], 16)) for h in _layout()["hooks"]} <= {int(i) & ~3 for i in differ}
+
+
+def test_composed_hooks_reach_the_module_and_chain_to_the_previous_heads(composed, v013):
+    module, out = composed
+    for hook in _layout()["hooks"]:
+        va = int(hook["va"], 16)
+        assert v013.branch(va) == (hook["kind"], int(hook["previous_target"], 16))
+        assert out.branch(va) == (hook["kind"], module.symbols[hook["entry"]])
+    calls = {"og_menu_hook_options": ("og_menu_previous_options", "og_menu_register_options"),
+             "og_menu_hook_parent": ("og_menu_previous_parent", "og_menu_register_parent"),
+             "og_menu_hook_alias": ("og_menu_previous_alias", "og_menu_register_alias")}
+    previous = {h["previous_symbol"]: int(h["previous_target"], 16) for h in _layout()["hooks"]}
+    for entry, (before, register) in calls.items():
+        at = module.symbols[entry]
+        assert out.u32(at) == 0xa9bf7bfd and out.u32(at + 4) == 0x910003fd   # stp x29, x30, [sp, #-16]!; mov x29, sp
+        assert out.branch(at + 8) == ("bl", previous[before]) and out.branch(at + 12) == ("bl", module.symbols[register])
+
+
+def test_composed_filters_handle_only_the_item(composed):
+    module, out = composed
+    previous = {h["entry"]: int(h["previous_target"], 16) for h in _layout()["hooks"]}
+    movz = lambda reg, imm: 0x52800000 | (imm << 5) | reg
+
+    def b_ne(at):
+        word = out.u32(at)
+        assert word & 0xff00001f == 0x54000001
+        imm = (word >> 5) & 0x7ffff
+        return at + 4 * (imm - ((imm & 0x40000) << 1))
+
+    for name, result in (("og_menu_supported", movz(0, 1)), ("og_menu_mapped", 0x2a0103e0)):   # mov w0, #1 / mov w0, w1
+        at = module.symbols[name]
+        assert [out.u32(at + 4 * k) for k in (0, 1)] == [movz(16, MID), 0x6b10003f]   # cmp w1, w16
+        assert b_ne(at + 8) == previous[name] and out.u32(at + 12) == result and out.u32(at + 16) == 0xd65f03c0
+    at = module.symbols["og_menu_apply"]
+    assert out.u32(at + 8) == 0xeb10029f   # cmp x20, x16 (x16 = og_menu_records by adrp/add)
+    assert out.branch(at + 16) == ("b", int(MENU["stock"]["apply_custom"]["va"], 16))
+    assert b_ne(at + 12) == at + 20 and out.branch(at + 20) == ("b", previous["og_menu_apply"])
+    at = module.symbols["og_menu_profile_blocked"]
+    assert out.u32(at) == movz(0, MID) and out.branch(at + 4) == ("b", module.symbols["og_menu_blocked"])
+    at = module.symbols["og_menu_default"]
+    assert [out.u32(at), out.u32(at + 4)] == [0x2a1f03e0, 0xd65f03c0]
+
+
+def test_composed_templates_and_records(composed, menu_host):
+    module, out = composed
+    _, _, records = menu_host
+    leaf, _ = records["leaf"]
+    assert out.bytes(module.symbols["leaf_template"], 0xc0) == leaf
+    profile, _ = records["profile"]
+    assert out.bytes(module.symbols["profile_template"], 0x80) == profile
+    row, _ = records["row0"]
+    assert out.bytes(module.symbols["row_template"], 0x80) == patched(row, {0x00: 0, 0x04: 0, 0x08: 0, 0x34: 0})
+    assert [out.u32(module.symbols["option_text"] + 4 * i) for i in range(3)] == list(OPTION_TEXT)
+    rw = next(s for s in out.loads if s["p_vaddr"] == 0x907f000)
+    records_va = module.symbols["og_menu_records"]
+    assert rw["p_flags"] == 6 and rw["p_vaddr"] <= records_va and records_va + 0x2c0 <= rw["p_vaddr"] + rw["p_memsz"]
+
+
+def test_menu_stock_checks_refuse_another_layout(v013):
+    from a7m4.open_gate import _check_menu_stock
+    lay = _layout()
+    _check_menu_stock(v013.data, v013.elf, v013.loads, lay)
+    tampered = bytearray(v013.data)
+    tampered[v013.offset(int(MENU["registrars"]["leaf"], 16))] ^= 1
+    with pytest.raises(ToolError, match="leaf registrar"):
+        _check_menu_stock(bytes(tampered), v013.elf, v013.loads, lay)
+    moved = json.loads(json.dumps(lay))
+    moved["menu"]["maps"]["alias"]["va"] = "0x7614330"
+    with pytest.raises(ToolError, match="alias map"):
+        _check_menu_stock(v013.data, v013.elf, v013.loads, moved)
+
+
+# --- the 68 string banks -----------------------------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def banks():
+    if not APP.is_dir():
+        pytest.skip("no v0.1.3 tree")
+    return _edit_banks(lambda path: (APP.parent.parent / path).read_bytes(), MENU["strings"])
+
+
+SHORTENED = {"0x0200ab5e", "0x0200ab61", "0x0200ab62", "0x0200ab63"}
+CHINESE = {"simplifiedchinese", "traditionalchinese"}
+
+
+def test_every_bank_holds_the_labels_and_keeps_its_size(banks):
+    assert len(banks) == 68
+    for path, (old, new, evidence) in banks.items():
+        texts = _uxc_texts(new)
+        assert len(new) == len(old), path
+        assert [texts[TEXT[k]] for k in ("title", "uhd_32", "k57_32")] == ["Open Gate", "4K 3:2", "5.7K 3:2"], path
+        assert texts[TEXT["off"]] == _uxc_texts(old)[TEXT["off"]]   # Sony's own Off, unchanged
+        chinese = path.split("_")[1] in CHINESE
+        assert set(evidence["shortened"]) == (SHORTENED - {"0x0200ab5e"} if chinese else SHORTENED), path
+        assert evidence["label_bytes"] == 44 and evidence["freed_bytes"] == (48 if chinese else 44)
+
+
+def test_banks_change_only_the_labels_and_the_listed_texts(banks):
+    rows = {(r["from"], r["to"]) for r in MENU["strings"]["shorten"]}
+    for path, (old, new, evidence) in banks.items():
+        before, after = _uxc_texts(old), _uxc_texts(new)
+        changed = {rid for rid in before.keys() | after.keys() if before.get(rid) != after.get(rid)}
+        assert changed == {TEXT["title"], TEXT["uhd_32"], TEXT["k57_32"]} | {int(k, 16) for k in evidence["shortened"]}
+        assert all(tuple(pair) in rows for pair in evidence["shortened"].values())
+        records = _uxc_records(new)
+        assert all(start + 4 + len(text) < len(new) for start, _, text in records)
+        last = max(start for start, rid, _ in _uxc_records(old) if f"{rid:#010x}" in evidence["shortened"])
+        tail = min(start for start, _, _ in _uxc_records(old) if start > last)
+        assert new[tail:] == old[tail:], path   # every record after the last shortened one keeps its offset
+
+
+@pytest.mark.skipif(not STOCK_APP.is_dir(), reason="no stock 6.02 tree")
+def test_banks_keep_every_sony_string(banks):
+    for path, (old, new, _) in banks.items():
+        stock, after = _uxc_texts((STOCK_APP.parent.parent / path).read_bytes()), _uxc_texts(new)
+        assert {rid: after.get(rid) for rid in stock} == stock, path
+        assert not {TEXT["title"], TEXT["uhd_32"], TEXT["k57_32"]} & stock.keys()
+
+
+def test_edit_bank_refuses_what_it_cannot_do():
+    path = APP / "string_english_horizontal.uxc"
+    if not path.is_file():
+        pytest.skip("no v0.1.3 tree")
+    data, strings = path.read_bytes(), MENU["strings"]
+    with pytest.raises(ToolError, match="not empty"):
+        _edit_bank(data, strings | {"add": {"0x0200ab5c": "taken"}})
+    with pytest.raises(ToolError, match="No listed text"):
+        _edit_bank(data, strings | {"shorten": [{"id": "0x0200ab61", "from": "other", "to": "x"}]})
+    with pytest.raises(ToolError, match="do not free enough"):
+        _edit_bank(data, strings | {"shorten": strings["shorten"][1:2]})
