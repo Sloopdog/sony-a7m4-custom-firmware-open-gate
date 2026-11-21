@@ -406,3 +406,30 @@ def test_bad_record_files_mean_off(host, image, files, setting):
     cam = Camera(host, files, Family.NTSC, image)
     assert cam.send("load") == ["mode", "2"]
     cam.close()
+
+
+# --- og_mem.c on the host, unchanged, against fake DMA, /dev/mem and /proc/self/maps --------------------------------
+
+def test_og_mem_on_the_host(image, tmp_path):
+    clang = shutil.which("clang") or shutil.which("cc")
+    if not clang:
+        pytest.skip("no host C compiler")
+    blob = image.encode()
+    (tmp_path / "og_sites_host.c").write_text(
+        "#include <stdint.h>\n_Alignas(8) const uint8_t og_sites[] = {" + ",".join(map(str, blob)) + "};\n")
+    (tmp_path / "og_config.h").write_text(_config_header(_layout(), RECORD))
+    fam = RECORD["families"]
+    assert fam["ntsc"]["offsets_in_record"] == fam["pal"]["offsets_in_record"]
+    c_bytes = lambda h: ",".join(str(b) for b in bytes.fromhex(h))
+    (tmp_path / "og_mem_seed.h").write_text(
+        "static const unsigned seed_off[] = {" + ",".join(map(str, fam["ntsc"]["offsets_in_record"])) + "};\n"
+        f"static const uint8_t seed_ntsc_old[] = {{{c_bytes(fam['ntsc']['old'])}}};\n"
+        f"static const uint8_t seed_pal_old[] = {{{c_bytes(fam['pal']['old'])}}};\n")
+    binary = tmp_path / "og_mem_host"
+    subprocess.run([clang, "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+                    "-fno-strict-aliasing", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                    "-I", str(_NATIVE), "-I", str(tmp_path), str(_ROOT / "tests/native/og_mem_host.c"),
+                    str(tmp_path / "og_sites_host.c"), "-o", str(binary)], check=True)
+    result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ok read above the cached page" in result.stdout and "ok detect pal, chain ascending" in result.stdout

@@ -50,7 +50,7 @@ static void poison(og_mem *m, uint32_t from, uint32_t to)
 /* Hold CP bytes [addr, addr + len) in buf: from addr's line to the end of its 4 KB page (or of the run). */
 static og_status cp_hold(og_mem *m, uint32_t addr, uint32_t len)
 {
-    if (m->lo < m->hi && addr >= m->lo && len <= m->hi - addr) return OG_OK;
+    if (m->lo < m->hi && addr >= m->lo && addr < m->hi && len <= m->hi - addr) return OG_OK;
     m->lo = m->hi = 0;
     if (addr < OG_CP_VA_MIN || addr >= OG_CP_VA_END || len > OG_CP_VA_END - addr) return OG_IO;
     uint32_t lo = addr & ~(LINE - 1u), hi = (addr + len + LINE - 1u) & ~(LINE - 1u), page_end = (addr | (PAGE - 1u)) + 1u;
