@@ -237,6 +237,67 @@
     "va": "0x1c15604",
     "bytes": "804640f9e00200b4"
    }
+  },
+  "strings": {
+   "what": "68 horizontal/vertical UXC banks: the three labels are added at empty index slots; the listed custom-firmware texts are shortened to make room, then the bank is repacked in record order with its size kept",
+   "banks": 68,
+   "add": {
+    "0x0200ab51": "Open Gate",
+    "0x0200ab52": "4K 3:2",
+    "0x0200ab53": "5.7K 3:2"
+   },
+   "shorten": [
+    {
+     "id": "0x0200ab61",
+     "from": "Use this audio for electronic shutter?",
+     "to": "Use as shutter sound?"
+    },
+    {
+     "id": "0x0200ab62",
+     "from": "Use this audio for focus?",
+     "to": "Use as focus sound?"
+    },
+    {
+     "id": "0x0200ab63",
+     "from": "Restore default focus sound?",
+     "to": "Reset focus sound?"
+    },
+    {
+     "id": "0x0200ab5e",
+     "from": "Import from SD",
+     "to": "Import"
+    },
+    {
+     "id": "0x0200ab61",
+     "from": "是否将此音频用于电子快门声？",
+     "to": "用作快门声？"
+    },
+    {
+     "id": "0x0200ab62",
+     "from": "是否将此音频用于对焦声音？",
+     "to": "用作对焦声音？"
+    },
+    {
+     "id": "0x0200ab63",
+     "from": "是否恢复默认对焦声音？",
+     "to": "恢复默认对焦声音？"
+    },
+    {
+     "id": "0x0200ab61",
+     "from": "是否將此音訊用於電子快門聲？",
+     "to": "用作快門聲？"
+    },
+    {
+     "id": "0x0200ab62",
+     "from": "是否將此音訊用於對焦聲音？",
+     "to": "用作對焦聲音？"
+    },
+    {
+     "id": "0x0200ab63",
+     "from": "是否恢復預設對焦聲音？",
+     "to": "恢復預設對焦聲音？"
+    }
+   ]
   }
  }
 }

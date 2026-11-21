@@ -35,6 +35,7 @@ _R_RELATIVE = 1027
 _MENU_RECORD_BYTES = 0xc0 + 3 * 0x80 + 0x80   # og_menu.c struct og_menu_records
 _SOURCES = ("og.c", "og_reconcile.c", "og_mem.c", "og_util.c", "og_menu.c", "og_entry.S", "og_menu_entry.S", "og_sites.S")
 _HEADERS = ("og.h", "og_internal.h", "og_image.h", "og_sys.h", "og_menu.h")
+_UXC_MAGIC, _UXC_ID_BIAS = b"uxc\x07", 0x1C000000
 _CFLAGS = ("-target", "aarch64-freestanding-none", "-mcpu=generic-neon-fp_armv8", "-mgeneral-regs-only",
           "-mno-outline-atomics", "-mstrict-align", "-mbranch-protection=none", "-fpie", "-Os", "-g", "-std=c11",
           "-Wall", "-Wextra", "-Werror", "-ffreestanding", "-fno-builtin", "-fno-stack-protector",
@@ -261,6 +262,112 @@ def compose_ap(appfw: bytes, module: Module, layout: dict) -> bytes:
     return result
 
 
+def _uxc_layout(data: bytes) -> tuple[int, int, int]:
+    """(index slots, data base, first stored id) of an indexed UXC string bank (methods/07-custom-aspect-ratios)."""
+    require(len(data) >= 16 and data[:4] == _UXC_MAGIC, "OG_UXC", "Not an indexed UXC string bank")
+    count, rest = divmod(struct.unpack_from("<I", data, 12)[0], 0x1001)
+    require(not rest and 0 < count <= 0x2000 and 16 + 2 * count <= len(data), "OG_UXC", "Bad UXC index bounds")
+    return count, (16 + 2 * count + 3) & ~3, 0x1E000000 + (struct.unpack_from("<H", data, 10)[0] << 13)
+
+
+def _uxc_record_bytes(text: bytes) -> int:
+    return (4 + len(text) + 1 + 3) & ~3   # stored id, UTF-8, NUL, padding to 4
+
+
+def _uxc_records(data: bytes) -> list[tuple[int, int, bytes]]:
+    """Every live record as (file offset, text id, UTF-8 text), in file order; refuses overlaps and bad ids."""
+    count, base, first = _uxc_layout(data)
+    records = []
+    for index in range(count):
+        word = struct.unpack_from("<H", data, 16 + 2 * index)[0]
+        if word == 0xFFFF:
+            continue
+        start = base + 4 * word
+        end = data.find(b"\0", start + 4)
+        require(start + 4 <= len(data) and struct.unpack_from("<I", data, start)[0] == first + index and end > 0,
+                "OG_UXC", f"Bad record at index {index}")
+        records.append((start, first + index - _UXC_ID_BIAS, data[start + 4:end]))
+    records.sort()
+    for (start, _, text), (after, _, _) in zip(records, records[1:]):
+        require(start + _uxc_record_bytes(text) <= after, "OG_UXC", f"Overlapping records at {start:#x}")
+    require(not records or records[-1][0] + _uxc_record_bytes(records[-1][2]) <= len(data), "OG_UXC", "Record past end")
+    return records
+
+
+def _uxc_texts(data: bytes) -> dict[int, str]:
+    return {rid: text.decode("utf-8") for _, rid, text in _uxc_records(data)}
+
+
+def _edit_bank(data: bytes, strings: dict) -> tuple[bytes, dict]:
+    """Add the open-gate labels at empty index slots, shortening the listed custom-firmware texts to make room.
+
+    Records keep their file order: those up to the last shortened one are packed again (the labels go right after the
+    first shortened one), every record after it keeps its offset, and freed bytes left over are zeros, so the bank keeps
+    its size and every 16-bit word offset only moves down. Nothing else changes."""
+    count, base, first = _uxc_layout(data)
+    records = _uxc_records(data)
+    texts = {rid: text for _, rid, text in records}
+    edits: dict[int, bytes] = {}
+    for row in strings["shorten"]:
+        rid = _int(row["id"])
+        if texts.get(rid) == row["from"].encode("utf-8"):
+            require(rid not in edits, "OG_UXC", f"{rid:#x} matches two shortenings")
+            edits[rid] = row["to"].encode("utf-8")
+    additions = [(_int(rid), text.encode("utf-8")) for rid, text in strings["add"].items()]
+    for rid, _ in additions:
+        index = rid + _UXC_ID_BIAS - first
+        require(0 <= index < count and struct.unpack_from("<H", data, 16 + 2 * index)[0] == 0xFFFF, "OG_UXC",
+                f"Index slot of {rid:#x} is not empty")
+    require(edits, "OG_UXC", "No listed text to shorten in this bank")
+    edited = [start for start, rid, _ in records if rid in edits]
+    first_edit, last_edit = min(edited), max(edited)
+    out, cursor = bytearray(data[:base]), base
+
+    def place(rid: int, text: bytes) -> None:
+        nonlocal cursor
+        word = (cursor - base) // 4
+        require(word < 0xFFFF, "OG_UXC", f"{rid:#x} would sit past the 16-bit word offsets")
+        struct.pack_into("<H", out, 16 + 2 * (rid + _UXC_ID_BIAS - first), word)
+        record = struct.pack("<I", rid + _UXC_ID_BIAS) + text + b"\0"
+        out.extend(record + bytes(_uxc_record_bytes(text) - len(record)))
+        cursor += _uxc_record_bytes(text)
+
+    for start, rid, text in records:
+        if start > last_edit:
+            require(cursor <= start, "OG_UXC", "The shortened texts do not free enough bytes")
+            out.extend(bytes(start - cursor) + data[start:])
+            break
+        place(rid, edits.get(rid, text))
+        if start == first_edit:
+            for addition in additions:
+                place(*addition)
+    else:
+        require(cursor <= len(data), "OG_UXC", "The shortened texts do not free enough bytes")
+        out.extend(bytes(len(data) - cursor))
+    result = bytes(out)
+    expected = {rid: text.decode("utf-8") for rid, text in (texts | edits | dict(additions)).items()}
+    require(len(result) == len(data) and _uxc_texts(result) == expected, "OG_UXC", "Edited bank does not read back")
+    freed = sum(_uxc_record_bytes(texts[rid]) - _uxc_record_bytes(text) for rid, text in edits.items())
+    return result, {"shortened": {f"{rid:#010x}": [texts[rid].decode("utf-8"), text.decode("utf-8")]
+                                  for rid, text in sorted(edits.items())},
+                    "freed_bytes": freed, "label_bytes": sum(_uxc_record_bytes(t) for _, t in additions)}
+
+
+def _edit_banks(read, strings: dict) -> dict[str, tuple[bytes, bytes, dict]]:
+    """{path: (old, new, evidence)} for the 68 horizontal/vertical banks; read(path) returns a bank's bytes."""
+    from .custom_sound import REQUIRED_RESOURCE_PATHS
+    paths = sorted(REQUIRED_RESOURCE_PATHS)
+    require(len(paths) == strings["banks"], "OG_UXC", "Unexpected string bank list")
+    result = {}
+    for path in paths:
+        old = read(path)
+        new, evidence = _edit_bank(old, strings)
+        require(set(evidence["shortened"]) >= {"0x0200ab61", "0x0200ab62", "0x0200ab63"}, "OG_UXC",
+                f"{path}: the sound confirmation texts are not the expected v0.1.3 ones")
+        result[path] = (old, new, evidence)
+    return result
+
+
 def apply_file_edits(fat: Fat, edits: Sequence[FileEdit]) -> None:
     for path in dict.fromkeys(e.path for e in edits):
         data = bytearray(fat.read(path))
@@ -297,7 +404,8 @@ def _audit(dat: Path, plain: Path, public_pem: bytes, marker: bytes) -> dict:
 
 
 def build(args: argparse.Namespace) -> dict:
-    """decode -> check_stock -> DmmCfg.bin -> compile_module -> compose_ap -> ext_replace -> sums -> encode -> resign."""
+    """decode -> check_stock -> DmmCfg.bin -> compile_module -> compose_ap -> 68 string banks -> ext_replace -> sums ->
+    encode -> resign."""
     from cryptography.hazmat.primitives import serialization
     from dissect.extfs import ExtFS
     from .firmware import decode, encode, exact, ext_replace, tar_index, update_sum
@@ -352,7 +460,11 @@ def build(args: argparse.Namespace) -> dict:
         write(_CP8, p8, fat8.bytes())
         module = compile_module(Path(args.zig), image, work / "module")
         ap = compose_ap(appfw, module, lay)
-        write(_AP15, p15, ext_replace(p15, "lib/appFw.so", ap, lay["inputs"]["nflasha15:lib/appFw.so"]))
+        banks = _edit_banks(lambda path: ext.get(path).open().read(), lay["menu"]["strings"])
+        p15_new = ext_replace(p15, "lib/appFw.so", ap, lay["inputs"]["nflasha15:lib/appFw.so"])
+        for path, (old, new, _) in banks.items():
+            p15_new = ext_replace(p15_new, path, new, digest(old))
+        write(_AP15, p15, p15_new)
         old_sum = read(_PART_SUM)
         write(_PART_SUM, old_sum, update_sum(old_sum, {k.removeprefix("0700_part_image/"): v
                                                       for k, v in changes.items()}))
@@ -391,6 +503,9 @@ def build(args: argparse.Namespace) -> dict:
                   "changed_regions": _changed_regions(appfw, ap)},
         "dmmcfg": {"input_sha256": digest(dmmcfg), "output_sha256": digest(after),
                    "changed_regions": _changed_regions(dmmcfg, after, gap=0)},
+        "string_banks": {path: {"input_sha256": digest(old), "output_sha256": digest(new), "bytes": len(new),
+                                "changed_regions": _changed_regions(old, new, gap=16)} | evidence
+                         for path, (old, new, evidence) in banks.items()},
         "changed_members": sorted(changes), "warm_boot_marker": marker.decode("ascii"),
         "encoding": encoding, "signing": signing, "final_decoding": final_decoding, "verify_sd_package": audit,
         "camera_io": False, "camera_tested": False,
