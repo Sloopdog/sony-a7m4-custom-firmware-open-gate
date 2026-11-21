@@ -32,6 +32,7 @@ and pins every source here by SHA-256 in `layout.json`.
 | Program headers | 15 -> 17 entries in place at `0x5e80000`; `e_phnum` and `PT_PHDR` sizes updated | | |
 | Hooks | `0x1ddab68`, `0x1e56b2c`: `bl` to the aspect wrappers `0x9012bd8` / `0x9012ce4` -> `bl og_hook_first/second` | | |
 | Menu hooks | seven more, below | | |
+| Menu placement | Shooting > Media count, one group entry, one relocation after `.rela.dyn` and its two sizes, below | | |
 
 Both sections sit in the file's existing zero gap (`0x5e72500..0x5e80000`); the file keeps its length. Each hook
 trampoline calls the aspect feature's wrapper first, unchanged (it runs the native presenter creation and registers
@@ -97,4 +98,23 @@ Every other mid, leaf and alias goes to the previous head unchanged, which ends 
 method calls the getter (which returns the value the setter staged while browsing) to find the confirmed row, then
 the commit with its alias, and ignores the commit's result; a failed `og_select` drops the staged value, so the item
 shows `og_selected()` again. Labels: `0x0200ab51`-`0x0200ab53` in the 68 banks and Sony's Off `0x0200a00f`
-([method](../../methods/11-open-gate/README.en.md#menu-item)). Not yet placed in a menu group: see the method.
+([method](../../methods/11-open-gate/README.en.md#menu-item)).
+
+The item is listed on MENU > Shooting > Media, after Display Media Info. `compose_ap` appends it as LUT (mid 1589,
+Color/Tone) and custom sounds (1592/1595, Shutter/Silent) appended theirs, after checking each value below in v0.1.3
+(layout.json `menu.placement`):
+
+| Place | VA / file offset | v0.1.3 | Composed |
+| --- | --- | --- | --- |
+| Media group count | `0x50fc2a0` / `0x50ec2a0` | 4 (Format, Rec. Media Settings, Recover Image DB, Display Media Info.) | 5 |
+| Media entry 4 | `0x50fc308` / `0x50ec308` | 24 zero bytes | `{1600, og_menu_records, 0}` |
+| `.rela.dyn` + 0x1700118 | file `0x17102c0` | unused copy of the old `.rela.plt` | `R_AARCH64_RELATIVE` at `0x50fc310`, addend `og_menu_records` |
+| `DT_RELASZ` | file `0x59cf418` | `0x1700118` | `0x1700130` |
+| `.rela.dyn` `sh_size` | file `0x5da95f8` | `0x1700118` | `0x1700130` |
+
+The group tables are fixed arrays of 30 entries; Image Quality/Rec, next to File Format, uses all 30. The leaf pointer
+needs the relocation because `appFw.so` is loaded at a bias, as every native entry's pointer has one. The 19,080 bytes
+after `.rela.dyn` (up to `.init`) are where 6.02's `.rela.plt` was: v0.1.3 moved it (`DT_JMPREL` `0x8f64be8`) and grew
+`.rela.dyn` over its first 137 entries, so the rest is a byte-identical copy of the live table's tail that nothing
+reads. `DT_RELACOUNT` stays `0xf2c40`: it counts the leading run of RELATIVE entries, which ends where the
+non-RELATIVE block starts, and the custom firmware's own appended RELATIVEs are outside it too.

@@ -26,10 +26,10 @@ record; a camera matching neither is left untouched.
 
 "Open Gate", with three options: **Off**, **4K 3:2** and **5.7K 3:2**.
 
-- **Where:** not placed in a menu yet. The plan puts it next to File Format on Shooting > Image Quality/Rec, but that
-  group already holds all 30 of its fixed slots (the menu tree is fixed arrays of 30 entries per group), so where it
-  goes is an open decision. Until then the item is registered but no menu page shows it, and the camera behaves as
-  with PR 1 alone.
+- **Where:** MENU > Shooting > Media, after Display Media Info. It is not next to File Format: Image Quality/Rec
+  already holds all 30 of its fixed slots (the menu tree is fixed arrays of 30 entries per group), and Media is the
+  group right after it. The item is appended there the way the custom firmware's LUT and custom-sound items are
+  appended to theirs; no native item moves.
 - **Applies on confirm**, through the same reconcile as at start: every site is checked, the chosen preset is
   written and read back, and Off puts every site back to stock without a power cycle. The choice is saved in
   `/setting/open_gate.dat` and re-applied at the next shooting screen.
@@ -81,7 +81,8 @@ python -m a7m4.open_gate build --base BODYDATA-custom-v0.1.3.DAT \
 The output directory must not exist. It gets `BODYDATA.DAT`, `verification.json` (every input and output hash, the
 changed members and byte ranges, the module's symbols, the signature check and the package audit) and `work/`.
 Only `nflasha8` (`DmmCfg.bin`, 16 bytes), `nflasha15` (`appFw.so`: the module in its zero gap, two program headers,
-nine hook instructions; and the 68 string banks, same sizes) and `part_image.sum` change. `av-cam.bin`, `libmpr.so`
+nine hook instructions, the Media group's count and new entry, one relocation after `.rela.dyn` and the two fields
+that size it; and the 68 string banks, same sizes) and `part_image.sum` change. `av-cam.bin`, `libmpr.so`
 and `cpapp-b.bin` stay byte-identical: their open-gate changes are made in memory at run time.
 
 Offline checks: `python -m pytest tests/test_open_gate.py`: the site image against the designs and v0.1.3's files;
