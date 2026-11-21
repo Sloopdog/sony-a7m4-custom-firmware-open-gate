@@ -36,16 +36,19 @@
   "og_reconcile.c": "56efb86ea61ec2c5bbe02604e8beefd9bb7e8123659da8eb9f9d85d24e3c5322",
   "og_mem.c": "aea4f61135959ae1defdb1ff01c18aba16369dabd10857b52a46cff6ff6bcc25",
   "og_util.c": "caf8fdf9e3f29420f44570a22cc0f7167c8a65c01124e529e246615d485e2d47",
+  "og_menu.c": "f34a0fc51623ff7eb7cca129d3e9408a3391e0067bb08c46b7ab8a68366fa885",
   "og_entry.S": "bb3b1e1ce81ba7aa905b25827627ce5462a714cef81df628fbce2fcd5899004b",
+  "og_menu_entry.S": "8b49a15b307d5e3630f87ed2bf3c432d93a42acdead46679d64c20a0a546e8ca",
   "og_sites.S": "1657b32224cdc6e7d319550bc944486e03552b37a2f33d4da04143ea8795978d",
   "og.h": "747613c420a0b9af624a3fb0d7cc2fca1343349dc86477427f775b7161fd59ae",
   "og_internal.h": "cd6327a82a0479c5543fae75a3d27af9df80ffa6911e7ef3826ed1e49004ef70",
   "og_image.h": "feacf8160b1b28d0def68d423ad2a05a148f4c0ada83366a12a77d9bcd483b91",
-  "og_sys.h": "d9376106c89f29fea29f2d374ef87b5dc30692f10920b5c8e18d7471b9d6db8a"
+  "og_sys.h": "d9376106c89f29fea29f2d374ef87b5dc30692f10920b5c8e18d7471b9d6db8a",
+  "og_menu.h": "625a0fefd7b266db34df8ffcb18c749687361f06f82028ba821c5c215307dc9c"
  },
  "module": {
-  "text_bytes": 46284,
-  "text_sha256": "2e0ecab0d08ccafbc9a6fd890ae6dada21cd6acf647308ad010fc1d01a968142",
+  "text_bytes": 47860,
+  "text_sha256": "b0b556b160cc43597d7282fde7800761bc0c21fa64692b2e403e2b02e3c80806",
   "what": "the linked .text (code, strings, site image) for these sources, designs and compiler"
  },
  "appfw": {
@@ -81,14 +84,72 @@
    "previous_target": "0x9012bd8",
    "previous_symbol": "hook_first_previous",
    "entry": "og_hook_first",
-   "what": "first shooting-screen presenter (585 widgets): BL to the aspect feature's registration wrapper (stock 6.02: blr x8)"
+   "what": "first shooting-screen presenter (585 widgets): BL to the aspect feature's registration wrapper (stock 6.02: blr x8)",
+   "kind": "bl"
   },
   {
    "va": "0x1e56b2c",
    "previous_target": "0x9012ce4",
    "previous_symbol": "hook_second_previous",
    "entry": "og_hook_second",
-   "what": "second shooting-screen presenter (442 widgets): BL to the aspect feature's registration wrapper (stock 6.02: blr x8)"
+   "what": "second shooting-screen presenter (442 widgets): BL to the aspect feature's registration wrapper (stock 6.02: blr x8)",
+   "kind": "bl"
+  },
+  {
+   "va": "0x1732000",
+   "kind": "bl",
+   "previous_target": "0x90108b8",
+   "previous_symbol": "og_menu_previous_options",
+   "entry": "og_menu_hook_options",
+   "what": "option-row map constructor (registrar 0x1cd0fe4; the leaf map's constructor at 0x1731fbc runs earlier in the same function): BL to the aspect feature's option wrapper (stock 6.02: bl 0x1cd0fe4)"
+  },
+  {
+   "va": "0x173210c",
+   "kind": "bl",
+   "previous_target": "0x90108e0",
+   "previous_symbol": "og_menu_previous_parent",
+   "entry": "og_menu_hook_parent",
+   "what": "option-to-leaf map constructor (registrar 0x1cd1934; the profile map's constructor at 0x1732044 runs earlier in the same function): BL to the aspect feature's parent wrapper (stock 6.02: bl 0x1cd1934)"
+  },
+  {
+   "va": "0x1737974",
+   "kind": "bl",
+   "previous_target": "0x9010908",
+   "previous_symbol": "og_menu_previous_alias",
+   "entry": "og_menu_hook_alias",
+   "what": "alias map constructor (registrar 0x1cd2bec; the value map's constructor at 0x1737930 runs earlier in the same function): BL to the aspect feature's alias wrapper (stock 6.02: bl 0x1cd2bec)"
+  },
+  {
+   "va": "0x1c08bc0",
+   "kind": "b",
+   "previous_target": "0x8fb90c8",
+   "previous_symbol": "og_menu_previous_supported",
+   "entry": "og_menu_supported",
+   "what": "menu-item support check (this, w1 = mid), first instruction: B to custom sounds' Volume filter (stock 6.02: stp x29, x30, [sp, #-0x90]!)"
+  },
+  {
+   "va": "0x1c1116c",
+   "kind": "b",
+   "previous_target": "0x8fb90e0",
+   "previous_symbol": "og_menu_previous_mapped",
+   "entry": "og_menu_mapped",
+   "what": "menu-item id map (this, w1 = mid), first instruction: B to custom sounds' Volume filter (stock 6.02: adrp x0, 0x5a24000)"
+  },
+  {
+   "va": "0x1c155e0",
+   "kind": "b",
+   "previous_target": "0x8fb90f8",
+   "previous_symbol": "og_menu_previous_apply",
+   "entry": "og_menu_apply",
+   "what": "apply method, x20 = leaf descriptor, before the native parameter broker: B to custom sounds' Volume filter (stock 6.02: ldr x0, [x19])"
+  },
+  {
+   "va": "0x1c14e6c",
+   "kind": "b",
+   "previous_target": "0x8fb877c",
+   "previous_symbol": "og_menu_previous_blocked",
+   "entry": "og_menu_blocked",
+   "what": "menu-item blocked check (w0 = mid, 1 = greyed), first instruction: B to custom sounds' Volume filter (stock 6.02: stp x29, x30, [sp, #-0x20]!)"
   }
  ],
  "camera": {
@@ -112,6 +173,70 @@
   ]
  },
  "open": [
-  "menu registrars and availability chain: custom-sounds pattern (methods/06-custom-sounds/IMPLEMENTATION.md), PR 2"
- ]
+  "menu placement: Shooting > Image Quality/Rec has all 30 of its fixed slots in use (group header 0x50fbfb8, next group 0x50fc298); where the item goes is an open decision"
+ ],
+ "menu": {
+  "what": "The Open Gate item: one custom leaf modelled on custom sounds' Volume item (mid 1598), registered by og_menu.c into six native std::map objects from the three registrar hooks. Placement in a menu group is not part of this layer (see methods/11-open-gate).",
+  "mid": 1600,
+  "alias_base": 5638,
+  "text": {
+   "title": "0x0200ab51",
+   "off": "0x0200a00f",
+   "uhd_32": "0x0200ab52",
+   "k57_32": "0x0200ab53"
+  },
+  "templates": {
+   "what": "v0.1.3 records og_menu.c's rodata templates are copied from; the fields it changes are listed there and checked by tests/test_open_gate.py",
+   "leaf": "0x8ff80a0",
+   "option": "0x8ff8160",
+   "profile": "0x8ff8660"
+  },
+  "registrars": {
+   "leaf": "0x1cd0d90",
+   "option": "0x1cd0fe4",
+   "profile": "0x1cd1238",
+   "parent": "0x1cd1934",
+   "value": "0x1cd29f8",
+   "alias": "0x1cd2bec"
+  },
+  "maps": {
+   "what": "static map objects in appFw.so's .bss; got is the GOT slot the constructor loads it from (R_AARCH64_RELATIVE addend = map)",
+   "leaf": {
+    "va": "0x7614238",
+    "got": "0x5a2c1f8"
+   },
+   "option": {
+    "va": "0x7614148",
+    "got": "0x59e0b80"
+   },
+   "profile": {
+    "va": "0x7614178",
+    "got": "0x5a27e88"
+   },
+   "parent": {
+    "va": "0x7614208",
+    "got": "0x5a33078"
+   },
+   "value": {
+    "va": "0x76142f8",
+    "got": "0x5a0e0d0"
+   },
+   "alias": {
+    "va": "0x7614328",
+    "got": "0x59fa4c8"
+   }
+  },
+  "stock": {
+   "what": "file bytes each stock function must start with (compose_ap checks them)",
+   "registrar": "fd7bbca9",
+   "native_true": {
+    "va": "0x1c9efbc",
+    "bytes": "20008052c0035fd6"
+   },
+   "apply_custom": {
+    "va": "0x1c15604",
+    "bytes": "804640f9e00200b4"
+   }
+  }
+ }
 }
