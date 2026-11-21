@@ -172,12 +172,36 @@
    "lcdcycle_v6 cave (evidence/cave_v6.dis): native_mode()[0] == 3 is movie; dlsym(0, ...) of the three libsencore symbols"
   ]
  },
- "open": [
-  "menu placement: Shooting > Image Quality/Rec has all 30 of its fixed slots in use (group header 0x50fbfb8, next group 0x50fc298); where the item goes is an open decision"
- ],
  "menu": {
-  "what": "The Open Gate item: one custom leaf modelled on custom sounds' Volume item (mid 1598), registered by og_menu.c into six native std::map objects from the three registrar hooks. Placement in a menu group is not part of this layer (see methods/11-open-gate).",
+  "what": "The Open Gate item: one custom leaf modelled on custom sounds' Volume item (mid 1598), registered by og_menu.c into six native std::map objects from the three registrar hooks, and listed on MENU > Shooting > Media (placement).",
   "mid": 1600,
+  "placement": {
+   "what": "Appended to Shooting > Media after Display Media Info. as LUT (mid 1589, Color/Tone) and custom sounds (1592/1595, Shutter/Silent) appended theirs: group count +1, a {u64 mid, u64 leaf, u64 page 0} entry in the first free slot, and an R_AARCH64_RELATIVE for the leaf pointer written right after .rela.dyn over the stale copy of the old .rela.plt (DT_JMPREL points at the live one), with DT_RELASZ and the .rela.dyn sh_size +24. DT_RELACOUNT stays: it counts the leading RELATIVE run, which ends where the non-RELATIVE block starts. Image Quality/Rec, next to File Format, holds all 30 of its fixed slots. compose_ap checks every value here before writing.",
+   "tab": {
+    "va": "0x50fbfa8",
+    "header": "02000000936000021000000000000000"
+   },
+   "group": {
+    "va": "0x50fc298",
+    "index": 1,
+    "header": "01000000576000020400000000000000",
+    "mids": [188, 189, 193, 194]
+   },
+   "slot": "0x50fc308",
+   "leaf_symbol": "og_menu_records",
+   "rela_dyn": {
+    "file_offset": "0x101a8",
+    "bytes": "0x1700118",
+    "section_header": "0x5da95d8",
+    "relocation": "0x17102c0",
+    "next_section": ".init"
+   },
+   "dynamic": {
+    "DT_RELASZ": "0x59cf410",
+    "DT_RELACOUNT": "0x59cf460",
+    "relacount": "0xf2c40"
+   }
+  },
   "alias_base": 5638,
   "text": {
    "title": "0x0200ab51",

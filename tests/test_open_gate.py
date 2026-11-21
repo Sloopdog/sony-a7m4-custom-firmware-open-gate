@@ -469,6 +469,13 @@ LEAF_POINTERS = {0x58: (0x8ff8160, "rows"), 0x70: (0x1c9efbc, "og_native_true"),
                  0x80: (0x8fb86b4, "og_menu_setter"), 0x88: (0x8fb86ec, "og_menu_commit"),
                  0xa8: (0x8f98430, "og_menu_default")}
 PROFILE_POINTERS = {0x48: (0x1c9efbc, "og_native_true"), 0x50: (0x8fb876c, "og_menu_profile_blocked")}
+# The menu tree (GOT 0x5a157b0 -> {u32 tabs; tabs}): tabs of 0x2e10 bytes = 16-byte header + 16 groups of 0x2e0 bytes =
+# 16-byte header {id, title, count, 0} + 30 entries {u64 mid, leaf*, page*}.
+TREE, TAB_BYTES, GROUP_BYTES = 0x50f6380, 0x2e10, 0x2e0
+SHOOTING = TREE + 8 + 2 * TAB_BYTES
+IMAGE_QUALITY, MEDIA = SHOOTING + 16, SHOOTING + 16 + GROUP_BYTES
+SLOT = MEDIA + 16 + 4 * 24   # Media's first free entry
+LUT_GROUP = 0x50ffc28        # Exposure/Color > Color/Tone, where LUT appended mid 1589 as entry 7
 
 needs_appfw = pytest.mark.skipif(not APPFW.is_file(), reason="no v0.1.3 tree")
 
@@ -523,6 +530,25 @@ def patched(record, patches):
     for at, value in patches.items():
         struct.pack_into("<I", out, at, value)
     return bytes(out)
+
+
+def group_entries(img, group):
+    """A menu group's live entries as (mid, leaf, page)."""
+    return [struct.unpack("<QQQ", img.bytes(group + 16 + 24 * i, 24)) for i in range(img.u32(group + 8))]
+
+
+def placement_offsets(v013):
+    """File offsets and sizes of the five placement writes, found from v0.1.3's own headers: Media's count, its first
+    free entry, the 24 bytes after .rela.dyn, DT_RELASZ's value and .rela.dyn's sh_size."""
+    elf = v013.elf
+    rela = elf.get_section_by_name(".rela.dyn")
+    index = [s.name for s in elf.iter_sections()].index(".rela.dyn")
+    dynamic = elf.get_section_by_name(".dynamic")
+    relasz = [t["d_tag"] for t in dynamic.iter_tags()].index("DT_RELASZ")
+    return {"count": (v013.offset(MEDIA + 8), 4), "entry": (v013.offset(SLOT), 24),
+            "relocation": (rela["sh_offset"] + rela["sh_size"], 24),
+            "DT_RELASZ": (dynamic["sh_offset"] + 16 * relasz + 8, 8),
+            "sh_size": (elf["e_shoff"] + index * elf["e_shentsize"] + 0x20, 8)}
 
 
 def parse_record(text):
@@ -616,21 +642,19 @@ def test_menu_ids_are_unused_in_v013(v013):
     assert not {ALIAS, ALIAS + 1, ALIAS + 2} & options and max(options) < ALIAS
     for base in (0x3eb07a0, 0x3edbf78, 0x3ee6e30):   # native parent, value and alias tables
         assert not {ALIAS, ALIAS + 1, ALIAS + 2} & set(v013.table(base, 5591, 8))
-    tree, tabs = 0x50f6380, v013.u32(0x50f6380)
-    for tab in range(tabs):
-        for g in range(v013.u32(tree + 8 + tab * 0x2e10 + 8)):
-            group = tree + 8 + tab * 0x2e10 + 16 + g * 0x2e0
+    for tab in range(v013.u32(TREE)):
+        for g in range(v013.u32(TREE + 8 + tab * TAB_BYTES + 8)):
+            group = TREE + 8 + tab * TAB_BYTES + 16 + g * GROUP_BYTES
             assert MID not in v013.table(group + 16, v013.u32(group + 8), 24)
 
 
 @needs_appfw
 def test_image_quality_rec_has_no_free_slot(v013):
-    """Why placement is open: the group File Format sits in holds all 30 of its fixed slots."""
-    shooting = 0x50f6380 + 8 + 2 * 0x2e10
-    group = shooting + 16
-    assert v013.u32(shooting) == 2 and v013.u32(group + 4) == 0x0200606e   # tab 'Shooting', group 'Image Quality/Rec'
-    assert v013.u32(group + 8) == 30 and 16 + 30 * 24 == 0x2e0
-    assert 27 in v013.table(group + 16, 30, 24) and 34 in v013.table(group + 16, 30, 24)   # both File Format items
+    """Why the item is on Media, not next to File Format: Image Quality/Rec holds all 30 of its fixed slots."""
+    assert v013.u32(SHOOTING) == 2 and v013.u32(IMAGE_QUALITY + 4) == 0x0200606e   # tab 'Shooting', 'Image Quality/Rec'
+    assert v013.u32(IMAGE_QUALITY + 8) == 30 and 16 + 30 * 24 == GROUP_BYTES
+    assert 27 in v013.table(IMAGE_QUALITY + 16, 30, 24) and 34 in v013.table(IMAGE_QUALITY + 16, 30, 24)   # File Format x2
+    assert MEDIA == IMAGE_QUALITY + GROUP_BYTES and v013.u32(MEDIA + 4) == 0x02006057   # 'Media', the next group
 
 
 @pytest.fixture(scope="module")
@@ -646,10 +670,96 @@ def test_composed_appfw_changes_only_the_listed_places(composed, v013):
     module, out = composed
     differ = np.flatnonzero(np.frombuffer(v013.data, np.uint8) != np.frombuffer(out.data, np.uint8))
     hooks = [v013.offset(int(h["va"], 16)) for h in _layout()["hooks"]]
+    places = placement_offsets(v013)
     allowed = [(0x38, 0x3a), (0x5e73000, 0x5e73000 + len(module.text)), (0x5e80000, 0x5e80000 + 17 * 56)]
-    allowed += [(at, at + 4) for at in hooks]
+    allowed += [(at, at + 4) for at in hooks] + [(at, at + n) for at, n in places.values()]
     assert all(any(lo <= int(i) < hi for lo, hi in allowed) for i in differ)
     assert {v013.offset(int(h["va"], 16)) for h in _layout()["hooks"]} <= {int(i) & ~3 for i in differ}
+    assert all(any(at <= int(i) < at + n for i in differ) for at, n in places.values())
+    place = MENU["placement"]
+    assert places == {"count": (v013.offset(int(place["group"]["va"], 16) + 8), 4),
+                      "entry": (v013.offset(int(place["slot"], 16)), 24),
+                      "relocation": (int(place["rela_dyn"]["relocation"], 16), 24),
+                      "DT_RELASZ": (int(place["dynamic"]["DT_RELASZ"], 16) + 8, 8),
+                      "sh_size": (int(place["rela_dyn"]["section_header"], 16) + 0x20, 8)}
+
+
+def test_composed_media_group_lists_the_item(composed, v013):
+    """MENU > Shooting > Media gets the item after its four native ones; every other group, Image Quality/Rec included,
+    keeps its bytes."""
+    import numpy as np
+    module, out = composed
+    leaf = module.symbols["og_menu_records"]
+    native = group_entries(v013, MEDIA)
+    assert [e[0] for e in native] == [188, 189, 193, 194]   # Format, Rec. Media Settings, Recover Image DB, Media Info.
+    assert group_entries(out, MEDIA) == native + [(MID, leaf, 0)]
+    assert out.relative(SLOT + 8) == leaf and out.relative(SLOT + 16) is None
+    for i, (_, item, page) in enumerate(native):   # each native pointer has its RELATIVE the same way
+        assert out.relative(MEDIA + 16 + 24 * i + (8 if item else 16)) == (item or page)
+    assert not any(out.bytes(SLOT + 24, MEDIA + GROUP_BYTES - SLOT - 24))
+    size = 8 + v013.u32(TREE) * TAB_BYTES
+    before, after = (np.frombuffer(img.bytes(TREE, size), np.uint8) for img in (v013, out))
+    changed = {TREE + int(i) for i in np.flatnonzero(before != after)}
+    assert changed and changed <= set(range(MEDIA + 8, MEDIA + 12)) | set(range(SLOT, SLOT + 24))
+    assert out.bytes(IMAGE_QUALITY, GROUP_BYTES) == v013.bytes(IMAGE_QUALITY, GROUP_BYTES)
+
+
+def test_composed_relocation_is_one_relative_after_rela_dyn(composed, v013):
+    """The leaf pointer's R_AARCH64_RELATIVE is appended to .rela.dyn over the unused copy of the old .rela.plt, as
+    v0.1.3 appended LUT's; the loader's sizes match the table and DT_RELACOUNT is still the leading RELATIVE run."""
+    import numpy as np
+    module, out = composed
+    leaf = module.symbols["og_menu_records"]
+
+    def tags(img):
+        return {t["d_tag"]: t["d_val"] for t in img.elf.get_section_by_name(".dynamic").iter_tags()}
+
+    old, new = (img.elf.get_section_by_name(".rela.dyn") for img in (v013, out))
+    before, after = tags(v013), tags(out)
+    assert new["sh_offset"] == old["sh_offset"] and new["sh_size"] == old["sh_size"] + 24 == after["DT_RELASZ"]
+    assert after["DT_RELAENT"] == 24 and after["DT_RELA"] == old["sh_addr"] == old["sh_offset"]   # VA = file offset
+    assert {k: v for k, v in after.items() if k != "DT_RELASZ"} == {k: v for k, v in before.items() if k != "DT_RELASZ"}
+    assert (out.rela[:-1] == v013.rela).all() and tuple(int(x) for x in out.rela[-1]) == (SLOT + 8, 1027, leaf)
+    count, others = after["DT_RELACOUNT"], np.flatnonzero(v013.rela[:, 1] != 1027)
+    assert count == others[0] and (out.rela[:count, 1] == 1027).all()
+    # The precedent: LUT's leaf pointer (Color/Tone entry 7) is a RELATIVE after the non-RELATIVE block, outside the count.
+    assert group_entries(v013, LUT_GROUP)[7] == (1589, 0x8f60000, 0)
+    lut = np.flatnonzero(v013.rela[:, 0] == LUT_GROUP + 16 + 7 * 24 + 8)
+    assert len(lut) == 1 and lut[0] > others[-1] and int(v013.rela[lut[0], 2]) == 0x8f60000
+    # Where it goes: outside every section, up to .init the bytes are the tail of the live .rela.plt (DT_JMPREL).
+    end = old["sh_offset"] + old["sh_size"]
+    init = v013.elf.get_section_by_name(".init")["sh_offset"]
+    plt = v013.elf.get_section_by_name(".rela.plt")
+    assert before["DT_JMPREL"] == plt["sh_addr"] and before["DT_PLTRELSZ"] == plt["sh_size"] and plt["sh_offset"] > init
+    assert v013.data[end:init] == v013.bytes(plt["sh_addr"] + plt["sh_size"] - (init - end), init - end)
+    assert not [s.name for s in v013.elf.iter_sections() if s["sh_type"] != "SHT_NOBITS" and s["sh_size"]
+                and s["sh_offset"] < end + 24 and end < s["sh_offset"] + s["sh_size"]]
+    assert out.data[end + 24:init] == v013.data[end + 24:init]
+
+
+@needs_appfw
+def test_menu_placement_refuses_another_layout(v013):
+    from a7m4.open_gate import _place_menu_item
+    lay = _layout()
+    leaf = int(lay["appfw"]["rw"]["va"], 16) + 0x6b0
+    place = lay["menu"]["placement"]
+    end = int(place["rela_dyn"]["relocation"], 16)
+    _place_menu_item(bytearray(v013.data), v013.data, v013.elf, v013.loads, leaf, lay)
+    for at, message in ((v013.offset(MEDIA + 8), "is not the expected one"),
+                        (v013.offset(MEDIA + 16 + 29 * 24), "free slots are not free"),
+                        (end + 100, "not the unused copy"),
+                        (int(place["dynamic"]["DT_RELACOUNT"], 16) + 8, "does not size"),
+                        (int(place["rela_dyn"]["section_header"], 16) + 0x20, "section header")):
+        tampered = bytearray(v013.data)
+        tampered[at] ^= 1
+        with pytest.raises(ToolError, match=message):
+            _place_menu_item(tampered, bytes(tampered), v013.elf, v013.loads, leaf, lay)
+    moved = json.loads(json.dumps(lay))
+    moved["menu"]["placement"]["rela_dyn"]["relocation"] = hex(end + 24)
+    with pytest.raises(ToolError, match="section header"):
+        _place_menu_item(bytearray(v013.data), v013.data, v013.elf, v013.loads, leaf, moved)
+    with pytest.raises(ToolError, match="RW section"):
+        _place_menu_item(bytearray(v013.data), v013.data, v013.elf, v013.loads, leaf + 8, lay)
 
 
 def test_composed_hooks_reach_the_module_and_chain_to_the_previous_heads(composed, v013):

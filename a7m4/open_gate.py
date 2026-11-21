@@ -32,6 +32,11 @@ _WARM_BOOT = "0700_part_image/dev/nflasha5"
 _PART_SUM = "0701_part_image_sum/part_image.sum"
 _PT_LOAD, _PT_PHDR, _PHDR = 1, 6, struct.Struct("<IIQQQQQQ")
 _R_RELATIVE = 1027
+_RELA = struct.Struct("<QQQ")   # Elf64_Rela {r_offset, r_info, r_addend}; also a menu group entry {mid, leaf, page}
+_DYN = struct.Struct("<qQ")     # Elf64_Dyn {d_tag, d_val}
+_DT_RELA, _DT_RELASZ, _DT_RELAENT, _DT_JMPREL, _DT_PLTRELSZ, _DT_RELACOUNT = 7, 8, 9, 23, 2, 0x6ffffff9
+_SH_SIZE = 0x20                 # Elf64_Shdr.sh_size
+_GROUP_BYTES, _GROUP_SLOTS = 0x2e0, 30   # menu group: 16-byte header {id, title, count, 0}, 30 entries of 24 bytes
 _MENU_RECORD_BYTES = 0xc0 + 3 * 0x80 + 0x80   # og_menu.c struct og_menu_records
 _SOURCES = ("og.c", "og_reconcile.c", "og_mem.c", "og_util.c", "og_menu.c", "og_entry.S", "og_menu_entry.S", "og_sites.S")
 _HEADERS = ("og.h", "og_internal.h", "og_image.h", "og_sys.h", "og_menu.h")
@@ -182,18 +187,27 @@ def _branch(pc: int, target: int, link: bool) -> bytes:
     return struct.pack("<I", (0x94000000 if link else 0x14000000) | ((delta >> 2) & 0x3ffffff))
 
 
+def _file_offset(loads, va: int, size: int) -> int:
+    """File offset of a file-backed VA range."""
+    load = next((s for s in loads if s["p_vaddr"] <= va and va + size <= s["p_vaddr"] + s["p_filesz"]), None)
+    require(load is not None, "OG_MENU", f"{va:#x} is not file-backed")
+    return load["p_offset"] + va - load["p_vaddr"]
+
+
+def _rela_table(appfw: bytes, elf):
+    import numpy as np
+    rela = elf.get_section_by_name(".rela.dyn")
+    return np.frombuffer(appfw, dtype="<u8", count=rela["sh_size"] // 8, offset=rela["sh_offset"]).reshape(-1, 3)
+
+
 def _check_menu_stock(appfw: bytes, elf, loads, layout: dict) -> None:
     """Every stock address og_menu.c uses: each map's GOT slot is an R_AARCH64_RELATIVE to the map's VA, each registrar
     and helper starts with the expected bytes."""
-    import numpy as np
     menu = layout["menu"]
-    rela = elf.get_section_by_name(".rela.dyn")
-    table = np.frombuffer(appfw, dtype="<u8", count=rela["sh_size"] // 8, offset=rela["sh_offset"]).reshape(-1, 3)
+    table = _rela_table(appfw, elf)
 
     def at(va: int, size: int) -> bytes:
-        load = next((s for s in loads if s["p_vaddr"] <= va and va + size <= s["p_vaddr"] + s["p_filesz"]), None)
-        require(load is not None, "OG_MENU", f"{va:#x} is not file-backed")
-        offset = load["p_offset"] + va - load["p_vaddr"]
+        offset = _file_offset(loads, va, size)
         return appfw[offset:offset + size]
 
     for name, entry in ((k, v) for k, v in menu["maps"].items() if k != "what"):
@@ -208,8 +222,76 @@ def _check_menu_stock(appfw: bytes, elf, loads, layout: dict) -> None:
         require(at(_int(stock["va"]), len(expected)) == expected, "OG_MENU", f"{name} {stock['va']} is not the stock code")
 
 
+def _place_menu_item(out: bytearray, appfw: bytes, elf, loads, leaf: int, layout: dict) -> None:
+    """List the item on MENU > Shooting > Media (layout.json "menu"."placement"), as LUT and custom sounds listed theirs:
+    the group's count +1, a {mid, leaf, 0} entry in its first free slot, and an R_AARCH64_RELATIVE for the leaf pointer
+    appended to .rela.dyn, with DT_RELASZ and the section's sh_size grown to match. Every value is checked in appfw
+    before anything is written."""
+    menu, place = layout["menu"], layout["menu"]["placement"]
+    rw = layout["appfw"]["rw"]
+    require(leaf % 16 == 0 and _int(rw["va"]) <= leaf < _int(rw["va"]) + _int(rw["max_bytes"]), "OG_MENU",
+            f"Leaf {leaf:#x} is not in the module's RW section")
+    table = _rela_table(appfw, elf)
+
+    # The group: its tab, its header, the native entries, and zeros (with no relocation) from the first free slot on.
+    tab, group, slot, mids = _int(place["tab"]["va"]), _int(place["group"]["va"]), _int(place["slot"]), place["group"]["mids"]
+    require(appfw[_file_offset(loads, tab, 16):][:16] == bytes.fromhex(place["tab"]["header"])
+            and group == tab + 16 + place["group"]["index"] * _GROUP_BYTES, "OG_MENU", f"Shooting tab {tab:#x}")
+    start = _file_offset(loads, group, _GROUP_BYTES)
+    slot_at = start + slot - group
+    require(appfw[start:start + 16] == bytes.fromhex(place["group"]["header"]) and len(mids) < _GROUP_SLOTS
+            and struct.unpack_from("<I", appfw, start + 8)[0] == len(mids) and slot == group + 16 + len(mids) * _RELA.size
+            and [_RELA.unpack_from(appfw, start + 16 + i * _RELA.size)[0] for i in range(len(mids))] == mids,
+            "OG_MENU", f"Media group {group:#x} is not the expected one")
+    require(not any(appfw[slot_at:start + _GROUP_BYTES])
+            and not ((table[:, 0] >= slot) & (table[:, 0] < group + _GROUP_BYTES)).any(), "OG_MENU",
+            "Media group's free slots are not free")
+
+    # .rela.dyn: its section header and .dynamic agree on its size; DT_RELACOUNT is exactly the leading RELATIVE run
+    # (it ends where the non-RELATIVE block starts, so an entry appended after the table leaves it unchanged); the 24
+    # bytes after the table are outside every section and part of the stale copy of .rela.plt left at its old place
+    # (DT_JMPREL points at the live table elsewhere), so nothing reads them.
+    rd, dyn = place["rela_dyn"], place["dynamic"]
+    offset, size, shdr, end = _int(rd["file_offset"]), _int(rd["bytes"]), _int(rd["section_header"]), _int(rd["relocation"])
+    sections = list(elf.iter_sections())
+    index = next(i for i, s in enumerate(sections) if s.name == ".rela.dyn")
+    require(shdr == elf["e_shoff"] + index * elf["e_shentsize"] and sections[index]["sh_offset"] == offset
+            and struct.unpack_from("<Q", appfw, shdr + _SH_SIZE)[0] == size and size % _RELA.size == 0
+            and end == offset + size and len(table) == size // _RELA.size, "OG_MENU", ".rela.dyn section header")
+    dynamic = elf.get_section_by_name(".dynamic")
+    tags: dict[int, tuple[int, int]] = {}
+    for at in range(dynamic["sh_offset"], dynamic["sh_offset"] + dynamic["sh_size"], _DYN.size):
+        tag, value = _DYN.unpack_from(appfw, at)
+        tags.setdefault(tag, (at, value))
+    count = _int(dyn["relacount"])
+    require(tags.get(_DT_RELASZ) == (_int(dyn["DT_RELASZ"]), size)
+            and tags.get(_DT_RELACOUNT) == (_int(dyn["DT_RELACOUNT"]), count)
+            and tags.get(_DT_RELAENT, (0, 0))[1] == _RELA.size
+            and _file_offset(loads, tags[_DT_RELA][1], size + _RELA.size) == offset, "OG_MENU",
+            ".dynamic does not size .rela.dyn as layout.json lists")
+    require(bool((table[:count, 1] == _R_RELATIVE).all()) and int(table[count, 1]) != _R_RELATIVE, "OG_MENU",
+            "DT_RELACOUNT is not the leading RELATIVE run")
+    following = elf.get_section_by_name(rd["next_section"])["sh_offset"]
+    plt_size = tags[_DT_PLTRELSZ][1]
+    plt = _file_offset(loads, tags[_DT_JMPREL][1], plt_size)
+    stale = following - end
+    require(_RELA.size <= stale <= plt_size and not (plt < following and end < plt + plt_size)
+            and appfw[end:following] == appfw[plt + plt_size - stale:plt + plt_size]
+            and not any(s["sh_type"] != "SHT_NOBITS" and s["sh_size"] and s["sh_offset"] < end + _RELA.size
+                        and end < s["sh_offset"] + s["sh_size"] for s in sections), "OG_MENU",
+            "The bytes after .rela.dyn are not the unused copy of .rela.plt")
+
+    grown = struct.pack("<Q", size + _RELA.size)
+    for at, data in ((start + 8, struct.pack("<I", len(mids) + 1)), (slot_at, _RELA.pack(menu["mid"], leaf, 0)),
+                     (end, _RELA.pack(slot + 8, _R_RELATIVE, leaf)), (tags[_DT_RELASZ][0] + 8, grown),
+                     (shdr + _SH_SIZE, grown)):
+        require(out[at:at + len(data)] == appfw[at:at + len(data)], "OG_MENU", f"{at:#x} was already changed")
+        out[at:at + len(data)] = data
+
+
 def compose_ap(appfw: bytes, module: Module, layout: dict) -> bytes:
-    """Place the module in appFw.so's zero gap, add its program headers and hooks; same length as the input."""
+    """Place the module in appFw.so's zero gap, add its program headers and hooks, and list the menu item on
+    Shooting > Media; same length as the input."""
     from elftools.elf.elffile import ELFFile
     ap = layout["appfw"]
     require(digest(appfw) == layout["inputs"]["nflasha15:lib/appFw.so"] and len(appfw) == ap["input_bytes"],
@@ -254,11 +336,21 @@ def compose_ap(appfw: bytes, module: Module, layout: dict) -> bytes:
         require(bytes(out[at:at + 4]) == _branch(va, _int(hook["previous_target"]), link), "OG_HOOK",
                 f"{va:#x} does not hold the expected {hook['kind'].upper()}")
         out[at:at + 4] = _branch(va, module.symbols[hook["entry"]], link)
+    place = layout["menu"]["placement"]
+    leaf = module.symbols.get(place["leaf_symbol"])
+    require(leaf is not None, "OG_LINK", f"{place['leaf_symbol']} is not in the module")
+    _place_menu_item(out, appfw, elf, loads, leaf, layout)
     result = bytes(out)
     require(len(result) == len(appfw), "OG_SIZE", "appFw.so changed size")
     check = ELFFile(io.BytesIO(result))
     segments = list(check.iter_segments())
     require(len(segments) == phnum + 2 and segments[-2]["p_vaddr"] == module.text_va, "OG_LAYOUT", "Re-read failed")
+    size = elf.get_section_by_name(".rela.dyn")["sh_size"] + _RELA.size
+    tags = {t["d_tag"]: t["d_val"] for t in check.get_section_by_name(".dynamic").iter_tags()}
+    require(check.get_section_by_name(".rela.dyn")["sh_size"] == tags["DT_RELASZ"] == size
+            and tags["DT_RELACOUNT"] == _int(place["dynamic"]["relacount"])
+            and tuple(int(x) for x in _rela_table(result, check)[-1]) == (_int(place["slot"]) + 8, _R_RELATIVE, leaf),
+            "OG_MENU", "Re-read .rela.dyn does not end with the item's relocation")
     return result
 
 
