@@ -329,11 +329,7 @@ def build(args: argparse.Namespace) -> dict:
     signing = resign(unsigned, args.private_key, final)
     final_decoding = decode(final, compare=plain)
     audit = _audit(final, plain, public_pem, marker)
-    if not audit["passed"]:
-        # The audit may only fail the way it already fails on the unmodified base package.
-        base_audit = _audit(args.base, baseline, public_pem, marker)
-        require(base_audit == audit, "AUDIT", f"verify_sd_package fails on the output only: {audit['error']}")
-        audit["base_package_fails_the_same_way"] = True
+    require(audit["passed"], "AUDIT", f"verify_sd_package fails on the output: {audit.get('error')}")
     after = Fat(changes[_CP8][1]).read("DMMCFG.BIN")
     report = {
         "base_sha256": lay["base_package"]["sha256"], "base_plaintext_sha256": initial["plaintext_sha256"],
