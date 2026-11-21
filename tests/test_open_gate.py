@@ -264,7 +264,7 @@ def host(image, files, tmp_path_factory):
         "#include <stdint.h>\n_Alignas(8) const uint8_t og_sites[] = {" + ",".join(map(str, blob)) + "};\n")
     (tmp / "og_config.h").write_text(_config_header(_layout(), RECORD))
     binary = tmp / "og_host"
-    subprocess.run([clang, "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-fno-strict-aliasing",
+    subprocess.run([clang, "-std=c11", "-D_DEFAULT_SOURCE", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-fno-strict-aliasing",
                     "-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-DOG_HOST",
                     f"-DOG_SETTING_DIR=\"{tmp / 'setting'}\"", "-I", str(_NATIVE), "-I", str(tmp),
                     str(_ROOT / "tests/native/og_host.c"), str(_NATIVE / "og_reconcile.c"), str(_NATIVE / "og.c"),
@@ -426,7 +426,7 @@ def test_og_mem_on_the_host(image, tmp_path):
         f"static const uint8_t seed_ntsc_old[] = {{{c_bytes(fam['ntsc']['old'])}}};\n"
         f"static const uint8_t seed_pal_old[] = {{{c_bytes(fam['pal']['old'])}}};\n")
     binary = tmp_path / "og_mem_host"
-    subprocess.run([clang, "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+    subprocess.run([clang, "-std=c11", "-D_DEFAULT_SOURCE", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
                     "-fno-strict-aliasing", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                     "-I", str(_NATIVE), "-I", str(tmp_path), str(_ROOT / "tests/native/og_mem_host.c"),
                     str(tmp_path / "og_sites_host.c"), "-o", str(binary)], check=True)
