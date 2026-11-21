@@ -57,8 +57,6 @@ unpacked v0.1.3 `0700_part_image/dev` tree) if they are not at the workspace def
 - Applied with the dial on stills only, as the kit does; with the dial on movie the next shooting screen retries.
 - While a mode is on, record only in the formats and frame rates the kit lists (XAVC HS 4K / XAVC S 4K at 24p NTSC,
   XAVC S 4K at 25p PAL; 5.7K: XAVC HS 4K). The menu still shows 100M for 5.7K: the card fills about three times faster.
-- `tools/verify_sd_package.py` stops at its backup-template count on v0.1.3 itself (its `backup.sum` has a
-  `MainDest.txt` row); the build requires the output to fail it in exactly the same way, and records that.
 
 ## Credits and licenses
 
