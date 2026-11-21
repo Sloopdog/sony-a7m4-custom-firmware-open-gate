@@ -3,7 +3,8 @@
  "what": "Open gate on Erlla custom firmware v0.1.3: exact inputs, the new appFw.so sections, the stock functions and hooks the module uses, and the camera constants og_config.h is generated from.",
  "base_package": {
   "name": "BODYDATA.DAT (A7M4-ToolKit-v0.1.3)",
-  "sha256": "cfb7929594f3f0a770b9fbecaff1269cd945bc0932e3ddbabf73050f8eda475f"
+  "sha256": "cfb7929594f3f0a770b9fbecaff1269cd945bc0932e3ddbabf73050f8eda475f",
+  "plaintext_sha256": "76f6dba012803a425bc0eac4629c398e21b4d9c89971832b2b820c110f8b9245"
  },
  "inputs": {
   "nflasha15:lib/appFw.so": "c5f9bc7c6e0401b92a3b244122f3e013f61db4ae0ba2e423f02b2760adccf5fc",
@@ -23,6 +24,29 @@
   "ogfile2560_hs_s_v1": "a71dc15bb72d42ef554482f950c8e9765699b04213acd9ddefd44c0f69e2e4ed",
   "ogfile57r300_v1": "a9cab3ee40d24e3176ee059bb5774c1661d8fc647ceb14160782740636f10bae",
   "lcdfill_v2": "01e08e55727d793ed94c9bc5e052a68442668b63d531df3f0902cbb5d505aaac"
+ },
+ "compiler": {
+  "name": "Zig 0.15.2 aarch64-macos (ziglang.org official build; tarball SHA-256 from download/index.json, minisign signature verified with the Zig release key)",
+  "tarball": "zig-aarch64-macos-0.15.2.tar.xz",
+  "tarball_sha256": "3cc2bab367e185cdfb27501c4b30b1b0653c28d9f73df8dc91488e66ece5fa6b",
+  "sha256": "c65cd34917923f575448cc0603dd7c2326da0af0e5c323043d090662dcdf351c"
+ },
+ "sources": {
+  "og.c": "d3487920508904dfd4295200dcb52fdb3781408e96579bbbfe06ee32e4cfc262",
+  "og_reconcile.c": "56efb86ea61ec2c5bbe02604e8beefd9bb7e8123659da8eb9f9d85d24e3c5322",
+  "og_mem.c": "279f74637207f88fcca1a41da1b52e19d063a42670c41959231db3f3606b537d",
+  "og_util.c": "caf8fdf9e3f29420f44570a22cc0f7167c8a65c01124e529e246615d485e2d47",
+  "og_entry.S": "bb3b1e1ce81ba7aa905b25827627ce5462a714cef81df628fbce2fcd5899004b",
+  "og_sites.S": "1657b32224cdc6e7d319550bc944486e03552b37a2f33d4da04143ea8795978d",
+  "og.h": "747613c420a0b9af624a3fb0d7cc2fca1343349dc86477427f775b7161fd59ae",
+  "og_internal.h": "cd6327a82a0479c5543fae75a3d27af9df80ffa6911e7ef3826ed1e49004ef70",
+  "og_image.h": "feacf8160b1b28d0def68d423ad2a05a148f4c0ada83366a12a77d9bcd483b91",
+  "og_sys.h": "d9376106c89f29fea29f2d374ef87b5dc30692f10920b5c8e18d7471b9d6db8a"
+ },
+ "module": {
+  "text_bytes": 44572,
+  "text_sha256": "fa2a26bb1e290e201ddb2d9a04c1c69649e9ca6ee14d0e26f8c4f992b77b1884",
+  "what": "the linked .text (code, strings, site image) for these sources, designs and compiler"
  },
  "appfw": {
   "input_bytes": 99221508,
