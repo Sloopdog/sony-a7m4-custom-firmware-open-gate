@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "what": "Open gate on Erlla custom firmware v0.1.3: exact inputs, the new appFw.so sections and the stock functions the module calls.",
+ "what": "Open gate on Erlla custom firmware v0.1.3: exact inputs, the new appFw.so sections, the stock functions and hooks the module uses, and the camera constants og_config.h is generated from.",
  "base_package": {
   "name": "BODYDATA.DAT (A7M4-ToolKit-v0.1.3)",
   "sha256": "cfb7929594f3f0a770b9fbecaff1269cd945bc0932e3ddbabf73050f8eda475f"
@@ -53,9 +53,42 @@
   "layout_state": "0x28facdc",
   "layout_request": "0x35994dc"
  },
+ "hooks": [
+  {
+   "va": "0x1ddab68",
+   "previous_target": "0x9012bd8",
+   "previous_symbol": "hook_first_previous",
+   "entry": "og_hook_first",
+   "what": "first shooting-screen presenter (585 widgets): BL to the aspect feature's registration wrapper (stock 6.02: blr x8)"
+  },
+  {
+   "va": "0x1e56b2c",
+   "previous_target": "0x9012ce4",
+   "previous_symbol": "hook_second_previous",
+   "entry": "og_hook_second",
+   "what": "second shooting-screen presenter (442 widgets): BL to the aspect feature's registration wrapper (stock 6.02: blr x8)"
+  }
+ ],
+ "camera": {
+  "dmm_symbols": {
+   "alloc": "_Z9dmm_allocjPj",
+   "free": "_Z8dmm_freej",
+   "dma": "sen_dma_transfer"
+  },
+  "dmm_buffer_bytes": "0x1000",
+  "dmm_phys_min": "0x400000000",
+  "dmm_phys_end": "0x500000000",
+  "avcam_phys": "0x401000000",
+  "avcam_map_offset": "0x381000",
+  "avcam_map_bytes": "0x3f000",
+  "dial_movie": 3,
+  "evidence": [
+   "libJit_level5_ogsq_v3.so: dmm_alloc(0x1000) at 0x529c, buffer range checks at 0x55e8, /dev/mem O_RDWR|O_SYNC at 0x5610, sen_dma_transfer(0, cp, phys, n) at 0x57e8 and (1, phys, cp, n) at 0x8050",
+   "libJit_level19_ogfile57r300_v1.so: /dev/mem O_RDWR at 0x4a50, mmap 0x3f000 at phys 0x401381000 at 0x4a80, 'av-cam.bin at physical' 0x401000000 at 0x526c, pread64 of /dev/mem at phys 0x401000000 + offset (0x5a34, 0x829c), /proc/self/maps libmpr.so offset-0 line (0x4b90..0x4ee8), /proc/self/mem pwrite64 at 0x805c",
+   "lcdcycle_v6 cave (evidence/cave_v6.dis): native_mode()[0] == 3 is movie; dlsym(0, ...) of the three libsencore symbols"
+  ]
+ },
  "open": [
-  "startup hook: chain onto the aspect feature's shooting-screen creation hooks 0x1ddab68 / 0x1e56b2c (verify their v0.1.3 targets first)",
-  "av-cam.bin physical base and libmpr.so base lookup: read from libJit_level19_ogfile57r300_v1.so",
-  "menu registrars and availability chain: custom-sounds pattern (methods/06-custom-sounds/IMPLEMENTATION.md)"
+  "menu registrars and availability chain: custom-sounds pattern (methods/06-custom-sounds/IMPLEMENTATION.md), PR 2"
  ]
 }
