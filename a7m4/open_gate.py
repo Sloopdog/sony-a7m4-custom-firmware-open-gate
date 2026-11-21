@@ -112,10 +112,11 @@ def compile_module(zig: Path, image: SiteImage, workdir: Path) -> Module:
     """Write image.encode() as og_sites.bin and link native/open-gate at layout.json's fixed VAs."""
     from elftools.elf.elffile import ELFFile
     lay = _layout()
+    # zig runs with cwd=workdir, so every path it is given must be absolute.
+    zig, workdir = Path(zig).resolve(), Path(workdir).resolve()
     actual = sha256(zig)
     require(actual == lay["compiler"]["sha256"], "OG_COMPILER", f"Zig binary SHA-256 {actual} is not the pinned one")
     _check_sources(lay)
-    workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=False)
     blob = image.encode()
     (workdir / "og_sites.bin").write_bytes(blob)
