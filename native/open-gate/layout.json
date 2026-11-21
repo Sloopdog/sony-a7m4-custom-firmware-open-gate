@@ -1,7 +1,10 @@
 {
  "schema": 1,
  "what": "Open gate on Erlla custom firmware v0.1.3: exact inputs, the new appFw.so sections and the stock functions the module calls.",
- "base_package": {"name": "BODYDATA.DAT (A7M4-ToolKit-v0.1.3)", "sha256": "cfb7929594f3f0a770b9fbecaff1269cd945bc0932e3ddbabf73050f8eda475f"},
+ "base_package": {
+  "name": "BODYDATA.DAT (A7M4-ToolKit-v0.1.3)",
+  "sha256": "cfb7929594f3f0a770b9fbecaff1269cd945bc0932e3ddbabf73050f8eda475f"
+ },
  "inputs": {
   "nflasha15:lib/appFw.so": "c5f9bc7c6e0401b92a3b244122f3e013f61db4ae0ba2e423f02b2760adccf5fc",
   "nflasha15:lib/libmpr.so": "cdce68c65813c8492a2268ec7364276d6f4e54495d5d8b0bacfeaf4d96cc708f",
@@ -9,12 +12,40 @@
   "nflasha8:DMMCFG.BIN": "7e7c09a3bb6922d5a1e5cfbddd29600b2fbc709264ac40bbde35b3f5ea2c54fd",
   "nflasha3:av-cam.bin": "3e881a3d9db8644c63a6d9fb9723d04c024d8e17b670c0d1635cd020459dd49f"
  },
+ "designs": {
+  "dmmwb4688_v1": "db23bd7fba49279264b91e56f1f0316a9cfd2e3fa2056a7c4e48918e8d3a44e5",
+  "ogsq_v3": "b8794fead76c658774521ea18af46d872d89bc6034f665279dc08b73ec3d4b2e",
+  "ogsq880_v1": "c7a09823b012e54cc04aa214905f4229b5e8dc9c08e40fa4b8865251ae4058f0",
+  "og57n_v1": "6b2e6ac9529d29a86422829b9e9a83b7cc87672821fead86cdbce0f5d40c1a84",
+  "og57n880_v1": "c61721025eb5e457bfb01daf617015fc3d2c6888f94806b8b72add78c1edb7d2",
+  "outsz2560_v1": "dd4aa30e78302f81a682fe357068dd7dee8675f74b20866080ea4cc66061c075",
+  "og57cp_v3": "b0f521921fa7c21d18e6779d8d5a892f4d8d1b3acce84b5272eb008e39e16693",
+  "ogfile2560_hs_s_v1": "a71dc15bb72d42ef554482f950c8e9765699b04213acd9ddefd44c0f69e2e4ed",
+  "ogfile57r300_v1": "a9cab3ee40d24e3176ee059bb5774c1661d8fc647ceb14160782740636f10bae",
+  "lcdfill_v2": "01e08e55727d793ed94c9bc5e052a68442668b63d531df3f0902cbb5d505aaac"
+ },
  "appfw": {
   "input_bytes": 99221508,
-  "free_gap": {"file_offset": "0x5e72500", "end": "0x5e80000", "bytes": 56064},
-  "program_headers": {"file_offset": "0x5e80000", "entries": 15, "free_entries": 3},
-  "rx": {"va": "0x9063000", "file_offset": "0x5e73000", "max_bytes": "0xc000"},
-  "rw": {"va": "0x907f000", "file_offset": "0x5e7f000", "max_bytes": "0x1000"}
+  "free_gap": {
+   "file_offset": "0x5e72500",
+   "end": "0x5e80000",
+   "bytes": 56064
+  },
+  "program_headers": {
+   "file_offset": "0x5e80000",
+   "entries": 15,
+   "free_entries": 3
+  },
+  "rx": {
+   "va": "0x9063000",
+   "file_offset": "0x5e73000",
+   "max_bytes": "0xc000"
+  },
+  "rw": {
+   "va": "0x907f000",
+   "file_offset": "0x5e7f000",
+   "max_bytes": "0x1000"
+  }
  },
  "stock_functions": {
   "dlsym": "0x17166a0",
