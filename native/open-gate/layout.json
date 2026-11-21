@@ -34,7 +34,7 @@
  "sources": {
   "og.c": "d3487920508904dfd4295200dcb52fdb3781408e96579bbbfe06ee32e4cfc262",
   "og_reconcile.c": "56efb86ea61ec2c5bbe02604e8beefd9bb7e8123659da8eb9f9d85d24e3c5322",
-  "og_mem.c": "279f74637207f88fcca1a41da1b52e19d063a42670c41959231db3f3606b537d",
+  "og_mem.c": "aea4f61135959ae1defdb1ff01c18aba16369dabd10857b52a46cff6ff6bcc25",
   "og_util.c": "caf8fdf9e3f29420f44570a22cc0f7167c8a65c01124e529e246615d485e2d47",
   "og_entry.S": "bb3b1e1ce81ba7aa905b25827627ce5462a714cef81df628fbce2fcd5899004b",
   "og_sites.S": "1657b32224cdc6e7d319550bc944486e03552b37a2f33d4da04143ea8795978d",
@@ -45,7 +45,7 @@
  },
  "module": {
   "text_bytes": 44572,
-  "text_sha256": "fa2a26bb1e290e201ddb2d9a04c1c69649e9ca6ee14d0e26f8c4f992b77b1884",
+  "text_sha256": "20a3826582230d5cdd0c485e685bec00074d7482c1c4d00b11e87f56cde5da5d",
   "what": "the linked .text (code, strings, site image) for these sources, designs and compiler"
  },
  "appfw": {
