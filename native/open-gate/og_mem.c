@@ -2,7 +2,7 @@
  *
  *   OG_CP               coprocessor RAM through libsencore: dmm_alloc a 4 KB buffer, map it from /dev/mem (O_SYNC),
  *                       sen_dma_transfer(0, cp, phys, n) reads and (1, phys, cp, n) writes, in whole 64-byte lines
- *   OG_RECORD_NTSC/PAL  the stored drive-parameter records of drive modes 0x8c0 and 0x880, found by their pointer chain
+ *   OG_CP_DRIVE_RECORD  the stored drive-parameter record of the camera's family, found by its pointer chain
  *   OG_AVCAM            av-cam.bin's tables through a /dev/mem mapping, checked against pread of /dev/mem as well
  *   OG_MPR              libmpr.so in this process through /proc/self/mem
  *
@@ -31,7 +31,7 @@ struct og_mem {
     uint32_t lo, hi;                   /* CP bytes [lo, hi) mirrored in buf; lo == hi: none */
     long sync_fd, mem_fd, self_fd;
     volatile uint8_t *avcam;           /* av-cam.bin from OG_AVCAM_MAP_OFFSET */
-    uint32_t record[2];                /* CP addresses of the 0x8c0 and 0x880 stored records */
+    uint32_t record;                   /* CP address of the family's stored record */
 };
 
 static og_mem the_mem;
@@ -128,22 +128,34 @@ static og_status locate(og_mem *m, uint32_t drive_mode, uint32_t *record)
     return OG_FOREIGN;
 }
 
-/* Both stored records: every camera lists every drive mode, so both are there, each with its own bytes. */
-static og_status locate_records(og_mem *m)
+typedef struct { og_mem *m; uint32_t record; } record_ctx;
+
+static og_status read_record(void *ctx, uint32_t offset, void *dst, uint32_t len)
 {
-    static const uint32_t drive_mode[2] = {OG_DRIVE_MODE_NTSC, OG_DRIVE_MODE_PAL};
-    for (unsigned i = 0; i < 2; i++) {
-        og_status s = locate(m, drive_mode[i], &m->record[i]);
-        if (s != OG_OK) return s;
-    }
-    return OG_OK;
+    record_ctx *c = ctx;
+    if (offset >= OG_RECORD_BYTES || len > OG_RECORD_BYTES - offset) return OG_IO;
+    return cp_read(c->m, c->record + offset, dst, len);
 }
 
-/* The CP address of len bytes at offset inside the stored record of a record space, or 0. */
-static uint32_t record_addr(og_mem *m, og_space space, uint32_t offset, uint32_t len)
+/* The family whose stored record holds that family's stock or open-gate bytes; exactly one must. */
+static og_status detect(og_mem *m, og_family *family)
 {
-    if (offset >= OG_RECORD_BYTES || len > OG_RECORD_BYTES - offset) return 0;
-    return m->record[space == OG_RECORD_PAL] + offset;
+    static const uint32_t drive_mode[OG_FAMILY_COUNT] = {OG_DRIVE_MODE_NTSC, OG_DRIVE_MODE_PAL};
+    int matches = 0;
+    for (unsigned f = 0; f < OG_FAMILY_COUNT; f++) {
+        record_ctx c = {m, 0};
+        og_status s = locate(m, drive_mode[f], &c.record);
+        if (s == OG_FOREIGN) continue;
+        if (s != OG_OK) return s;
+        int hit = og_record_matches((og_family)f, read_record, &c);
+        if (hit < 0) return OG_IO;
+        if (hit) {
+            matches++;
+            *family = (og_family)f;
+            m->record = c.record;
+        }
+    }
+    return matches == 1 ? OG_OK : OG_FOREIGN;
 }
 
 static int hex(const char **cursor, char stop, uint64_t *value)
@@ -230,7 +242,7 @@ static og_status open_all(og_mem *m)
     return process.mpr ? OG_OK : OG_NOT_READY;
 }
 
-og_status og_mem_begin(og_mem **out)
+og_status og_mem_begin(og_mem **out, og_family *family)
 {
     og_mem *m = &the_mem;
     *out = 0;
@@ -238,7 +250,7 @@ og_status og_mem_begin(og_mem **out)
     m->open = 1;
     m->sync_fd = m->mem_fd = m->self_fd = -1;
     og_status s = open_all(m);
-    if (s == OG_OK) s = locate_records(m);
+    if (s == OG_OK) s = detect(m, family);
     if (s != OG_OK) {
         og_mem_end(m);
         return s;
@@ -261,10 +273,9 @@ og_status og_mem_read(og_mem *m, og_space space, uint32_t addr, void *dst, uint3
     switch (space) {
     case OG_CP:
         return cp_read(m, addr, dst, len);
-    case OG_RECORD_NTSC:
-    case OG_RECORD_PAL: {
-        uint32_t at = record_addr(m, space, addr, len);
-        return at ? cp_read(m, at, dst, len) : OG_IO;
+    case OG_CP_DRIVE_RECORD: {
+        record_ctx c = {m, m->record};
+        return read_record(&c, addr, dst, len);
     }
     case OG_AVCAM:
         if (!avcam_range(addr, len)) return OG_IO;
@@ -286,11 +297,9 @@ og_status og_mem_write(og_mem *m, og_space space, uint32_t addr, const void *src
     switch (space) {
     case OG_CP:
         return cp_write(m, addr, bytes, len);
-    case OG_RECORD_NTSC:
-    case OG_RECORD_PAL: {
-        uint32_t at = record_addr(m, space, addr, len);
-        return at ? cp_write(m, at, bytes, len) : OG_IO;
-    }
+    case OG_CP_DRIVE_RECORD:
+        if (addr >= OG_RECORD_BYTES || len > OG_RECORD_BYTES - addr) return OG_IO;
+        return cp_write(m, m->record + addr, bytes, len);
     case OG_AVCAM:
         if (!avcam_range(addr, len)) return OG_IO;
         for (uint32_t i = 0; i < len; i++) m->avcam[addr - OG_AVCAM_MAP_OFFSET + i] = bytes[i];
@@ -324,6 +333,6 @@ void og_mem_end(og_mem *m)
     m->self_fd = m->mem_fd = m->sync_fd = -1;
     m->has_buffer = 0;
     m->lo = m->hi = 0;
-    m->record[0] = m->record[1] = 0;
+    m->record = 0;
     m->open = 0;
 }
