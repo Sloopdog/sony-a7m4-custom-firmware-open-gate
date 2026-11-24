@@ -43,7 +43,9 @@ As in the kit's helpers (`libJit_level5_*`, `level16`, `level19_ogfile57r300_v1`
   page read.
 - **Stored record**: root `0x12b9cc0` -> `+0x20` -> `+0x684` -> count, mode list, records (348 bytes each); the record
   of drive mode `0x8c0` (NTSC) or `0x880` (PAL). The family is the one whose record holds that family's stock or
-  open-gate bytes; exactly one must.
+  open-gate bytes; exactly one must. The list holds all 30 drive modes, so both records are there; on an NTSC camera
+  `0x880`'s record holds `e5` at offset `0xb8` where the kit's PAL stock (read on a camera set to PAL) has `98`, so
+  only `0x8c0`'s matches (camera trace, diagnostic build `8ba24f9`).
 - **av-cam.bin**: `/dev/mem` (no `O_SYNC`) mapped at physical `0x401381000` (file `0x381000..0x3c0000`); each write is
   read back through the mapping and through `pread` of `/dev/mem`.
 - **libmpr.so**: `/proc/self/mem` at the start of its offset-0 mapping in `/proc/self/maps` plus the file offset. Data and
