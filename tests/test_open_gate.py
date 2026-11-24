@@ -439,4 +439,5 @@ def test_og_mem_on_the_host(image, tmp_path):
                     str(tmp_path / "og_sites_host.c"), "-o", str(binary)], check=True)
     result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "ok read above the cached page" in result.stdout and "ok detect pal, chain ascending" in result.stdout
+    assert "ok read above the cached page" in result.stdout
+    assert "ok the NTSC camera's records: NTSC, the record of 0x8c0 at index 10" in result.stdout
