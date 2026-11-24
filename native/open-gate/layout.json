@@ -21,8 +21,8 @@
   "og57n880_v1": "c61721025eb5e457bfb01daf617015fc3d2c6888f94806b8b72add78c1edb7d2",
   "outsz2560_v1": "dd4aa30e78302f81a682fe357068dd7dee8675f74b20866080ea4cc66061c075",
   "og57cp_v3": "b0f521921fa7c21d18e6779d8d5a892f4d8d1b3acce84b5272eb008e39e16693",
-  "ogfile2560_hs_s_v1": "a71dc15bb72d42ef554482f950c8e9765699b04213acd9ddefd44c0f69e2e4ed",
-  "ogfile57r300_v1": "a9cab3ee40d24e3176ee059bb5774c1661d8fc647ceb14160782740636f10bae",
+  "ogfile2560_hs_s_v2": "728bbc2e7899c4848868dfea3373de53d115d7e13226bbea1b578fe71f74263c",
+  "ogfile57r300m1_v4": "a73b8b69b68481f7065be1f3c83d8a827dd28fb2606926506615de77ff0adfad",
   "lcdfill_v2": "01e08e55727d793ed94c9bc5e052a68442668b63d531df3f0902cbb5d505aaac"
  },
  "compiler": {
@@ -44,8 +44,8 @@
   "og_sys.h": "d9376106c89f29fea29f2d374ef87b5dc30692f10920b5c8e18d7471b9d6db8a"
  },
  "module": {
-  "text_bytes": 44572,
-  "text_sha256": "20a3826582230d5cdd0c485e685bec00074d7482c1c4d00b11e87f56cde5da5d",
+  "text_bytes": 46284,
+  "text_sha256": "2e0ecab0d08ccafbc9a6fd890ae6dada21cd6acf647308ad010fc1d01a968142",
   "what": "the linked .text (code, strings, site image) for these sources, designs and compiler"
  },
  "appfw": {
@@ -107,6 +107,7 @@
   "evidence": [
    "libJit_level5_ogsq_v3.so: dmm_alloc(0x1000) at 0x529c, buffer range checks at 0x55e8, /dev/mem O_RDWR|O_SYNC at 0x5610, sen_dma_transfer(0, cp, phys, n) at 0x57e8 and (1, phys, cp, n) at 0x8050",
    "libJit_level19_ogfile57r300_v1.so: /dev/mem O_RDWR at 0x4a50, mmap 0x3f000 at phys 0x401381000 at 0x4a80, 'av-cam.bin at physical' 0x401000000 at 0x526c, pread64 of /dev/mem at phys 0x401000000 + offset (0x5a34, 0x829c), /proc/self/maps libmpr.so offset-0 line (0x4b90..0x4ee8), /proc/self/mem pwrite64 at 0x805c",
+   "libJit_level19_ogfile57r300m1_v4.so: the same system calls as ogfile57r300_v1 and no cache maintenance; its libmpr.so code sites (first PT_LOAD, R+X, 0x0..0x2ea010) go through the same /proc/self/mem pwrite64 (0x90d0) as its data sites",
    "lcdcycle_v6 cave (evidence/cave_v6.dis): native_mode()[0] == 3 is movie; dlsym(0, ...) of the three libsencore symbols"
   ]
  },

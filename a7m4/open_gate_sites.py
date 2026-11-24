@@ -160,10 +160,10 @@ class SiteImage:
 # Designs per preset, in the kit's apply order (open_gate_apply.py STATES), without step 1 (baked into
 # DmmCfg.bin) and without the C3 cycle.
 PRESETS: dict[tuple[Mode, Family], tuple[str, ...]] = {
-    (Mode.UHD_32, Family.NTSC): ("ogsq_v3", "outsz2560_v1", "ogfile2560_hs_s_v1", "lcdfill_v2"),
-    (Mode.UHD_32, Family.PAL): ("ogsq880_v1", "outsz2560_v1", "ogfile2560_hs_s_v1", "lcdfill_v2"),
-    (Mode.K57_32, Family.NTSC): ("og57n_v1", "og57cp_v3", "ogfile57r300_v1", "lcdfill_v2"),
-    (Mode.K57_32, Family.PAL): ("og57n880_v1", "og57cp_v3", "ogfile57r300_v1", "lcdfill_v2"),
+    (Mode.UHD_32, Family.NTSC): ("ogsq_v3", "outsz2560_v1", "ogfile2560_hs_s_v2", "lcdfill_v2"),
+    (Mode.UHD_32, Family.PAL): ("ogsq880_v1", "outsz2560_v1", "ogfile2560_hs_s_v2", "lcdfill_v2"),
+    (Mode.K57_32, Family.NTSC): ("og57n_v1", "og57cp_v3", "ogfile57r300m1_v4", "lcdfill_v2"),
+    (Mode.K57_32, Family.PAL): ("og57n880_v1", "og57cp_v3", "ogfile57r300m1_v4", "lcdfill_v2"),
 }
 STEP1 = "dmmwb4688_v1"
 
@@ -192,7 +192,7 @@ def runs_of(design: dict, record_patch: dict | None) -> list[Run]:
         if "binary" in patch:
             space = {"av-cam.bin": Space.AVCAM, "libmpr.so": Space.MPR}[patch["binary"]]
             addr = int(patch["file_off"], 16)
-            require(not patch.get("code"), "OG_DESIGN", "Code sites are not supported")
+            require(space is Space.MPR or not patch.get("code"), "OG_DESIGN", "Code sites are libmpr.so only")
             require(space is not Space.MPR or int(patch["va"], 16) == addr, "OG_DESIGN", "libmpr site VA != offset")
         else:
             require(patch.get("where") == "file" and patch.get("kind") in ("S", "R"), "OG_DESIGN",

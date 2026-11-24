@@ -17,8 +17,8 @@ import pytest
 
 from a7m4.common import ToolError
 from a7m4.open_gate import Module, _config_header, _linker_script, build, compose_ap
-from a7m4.open_gate_sites import (_CP_IMAGE_VA, _NATIVE, PRESETS, _ROOT, STEP1, _STORED_RECORD, Family, Mode, SiteImage,
-                                  Space, check_stock, compile_image, dmmcfg_edits, _layout, load_design)
+from a7m4.open_gate_sites import (_CP_IMAGE_VA, _NATIVE, PRESETS, _ROOT, STEP1, _STORED_RECORD, Family, Mode, Run, SiteImage,
+                                  Space, check_stock, compile_image, dmmcfg_edits, _layout, load_design, runs_of)
 
 WORKSPACE = _ROOT.parent
 DESIGNS = Path(os.environ.get("OG_DESIGNS", WORKSPACE / "a7iv-open-gate-test/windows/tools/modding/designs"))
@@ -89,7 +89,7 @@ def image_bytes(preset):
 def test_presets_are_the_kit_states_without_step1_and_the_c3_cycle():
     kit = runpy.run_path(str(KIT_APPLY))
     for state, mode in (("default", Mode.UHD_32), ("real57", Mode.K57_32)):
-        steps = [s[1] for s in kit["STATES"][state]["steps"] if s[1] not in (STEP1, "lcdcycle_v6")]
+        steps = [s[1] for s in kit["STATES"][state]["steps"] if s[1] != STEP1 and not s[1].startswith("lcdcycle")]
         assert PRESETS[(mode, Family.NTSC)] == tuple(steps)
         pal = [kit["PAL"][s][1] if s in kit["PAL"] else s for s in steps]
         assert PRESETS[(mode, Family.PAL)] == tuple(pal)
@@ -157,6 +157,13 @@ def test_load_design_refuses_a_changed_file(tmp_path):
     (tmp_path / "lcdfill_v2.json").write_text((tmp_path / "lcdfill_v2.json").read_text().replace("03000000", "03000001", 1))
     with pytest.raises(ToolError, match="SHA-256"):
         load_design(tmp_path, "lcdfill_v2")
+
+
+def test_runs_of_takes_code_sites_in_libmpr_only():
+    mpr = {"binary": "libmpr.so", "file_off": "0x11f4e0", "va": "0x11f4e0", "old": "2090801a", "new": "00008052", "code": True}
+    assert runs_of({"patches": [mpr]}, None) == [Run(Space.MPR, 0x11f4e0, bytes.fromhex("2090801a"), bytes.fromhex("00008052"))]
+    with pytest.raises(ToolError, match="libmpr.so only"):
+        runs_of({"patches": [dict(mpr, binary="av-cam.bin")]}, None)
 
 
 def test_native_sources_are_pinned():
