@@ -26,12 +26,13 @@ and pins every source here by SHA-256 in `layout.json`.
 
 | Piece | VA | File offset | Size |
 | --- | --- | --- | --- |
-| Code, strings, site image (R-X) | `0x9063000` | `0x5e73000` | 46,444 of 0xc000 bytes |
-| State (RW, file-backed zeros) | `0x907f000` | `0x5e7f000` | 1,700 of 0x1000 bytes |
+| Code, strings, site image (R-X) | `0x9063000` | `0x5e73000` | 46,572 of 0xc000 bytes |
+| State (RW, initially zero) | `0x907f000` | `0x5e7f000` | 1,700 of 0x1000 bytes |
+| Menu rows (RW, initialized) | `0x907fc00` | `0x5e7fc00` | 512 bytes, outside module state |
 | Program headers | 15 -> 17 entries in place at `0x5e80000`; `e_phnum` and `PT_PHDR` sizes updated | | |
 | Hooks | `0x1ddab68`, `0x1e56b2c`: `bl` to the aspect wrappers `0x9012bd8` / `0x9012ce4` -> `bl og_hook_first/second` | | |
 | Menu hook | `0x1c14e6c`: `b 0x8fb877c` (custom sounds' Volume filter) -> `b og_menu_disabled` | | |
-| Menu | the custom sound page's records and two menu groups, and eight relocations changed in place, below | | |
+| Menu | the custom sound page's records and two menu groups, and ten relocations changed in place, below | | |
 
 Both sections sit in the file's existing zero gap (`0x5e72500..0x5e80000`); the file keeps its length. Each hook
 trampoline calls the aspect feature's wrapper first, unchanged (it runs the native presenter creation and registers
@@ -63,7 +64,7 @@ of one of the presets at that site (the build splits runs so overlapping sites c
 nothing is written. Then presets are undone last-first (sites already as the target wants them are left), and the
 target's runs are applied in the kit's order. A failed read or write puts every touched site back to its starting
 bytes (`OG_IO`); if that fails too, `OG_UNDO_FAILED`. When memory already matches, nothing is written. `og_power_on`
-does nothing with the dial on movie, and nothing at all while the mode is Off and nothing was applied in this process.
+does nothing with the dial on movie. A fresh process reports unverified until even Off has been checked. Faults stop future writes; see [local fixes](LOCAL-FIXES.md).
 
 ## Menu item
 
@@ -78,22 +79,20 @@ camera. `compose_ap` checks every old value below in v0.1.3 before writing (layo
 | Media group | `0x50fc298` | 4 entries (Format, Rec. Media Settings, Recover Image DB, Display Media Info.) | 5: `{1592, 0, page 0x8fc0400}` |
 | Shutter/Silent group | `0x50fd3d8` | 13 entries, the last two the sound pages 1592 and 1595 | 11, the two slots zeroed |
 | Page, both copies | `0x8fc0400` (group), `0x8ff8000` (page map) +0x64 | 2 and 3 children (switch, import, volume) | 1: the switch |
-| Switch leaf | `0x8fc0490` +0x0c, +0x54 | sound help text, 2 options | none, 3 options |
-| Rows (contiguous from leaf +0x58) | `0x8fc0610`, `0x8fc0690`, `0x8fc0710` | On, Off; the listed focus page's header | Off, 4K 3:2, 5.7K 3:2 (ids 5607..5609, values 0..2 = `og_mode`) |
-| Option-to-leaf pair | `0x8f91c80` | 5609 -> 1596 (focus switch) | 5609 -> 1593 |
+| Switch leaf | `0x8fc0490` +0x0c, +0x54 | sound help text, 2 options | none, 4 rows |
+| Rows (contiguous from leaf +0x58) | `0x907fc00` through `0x907fd80` | copies of the four existing sound rows | Off, 4K 3:2, 5.7K 3:2, Reset in stills (ids 5607..5610); value 3 never applies |
+| Option-to-leaf pairs | `0x8f91c80`, `0x8f91c88` | 5609/5610 -> 1596 | 5609/5610 -> 1593 |
 
-Rows are text only, as native text rows: help = the row's text, no images. The third row is the focus switch's first
-row (5609) moved after the other two, with row id `0x1203f0`; the bytes it replaces were only reached through the
-Shutter/Silent entry, and the two relocations inside them are moved away.
+Rows are text only, with help equal to text and no images. Four existing records are copied into reserved RW space after BSS; source records remain unchanged. Composition rejects overlap with runtime state and verifies all option-map and parent-map entries.
 
 Relocations, changed in place (`.rela.dyn` keeps its size, `DT_RELASZ` and `DT_RELACOUNT` unchanged):
 
 | r_offset (v0.1.3) | Addend | Now |
 | --- | --- | --- |
 | `0x50fd500`, `0x50fd518` | the two sound pages, Shutter/Silent entries 11 and 12 | Media entry 4's page field `0x50fc318`, `0x8fc0400` |
-| `0x8fc0730`, `0x8fc0788` | inside the third row's bytes | the same (four identical relocations of one field) |
+| `0x8fc04e8` | leaf rows -> `0x8fc0610` | `0x907fc00` |
 | `0x8fc0508`, `0x8fc0510`, `0x8fc0518` | switch getter, setter, commit | `og_menu_getter`, `og_menu_setter`, `og_menu_commit` |
-| `0x8fc0aa8` | option map entry 5609 -> `0x8fc0920` | `0x8fc0710`, the third row |
+| `0x8fc0a88`, `0x8fc0a98`, `0x8fc0aa8`, `0x8fc0ab8` | four original sound row pointers | four reserved RW row records |
 
 The leaf's default (+0xa8, `0x8f98430`: return 0) is Off already and stays.
 
@@ -106,5 +105,5 @@ refused on stills and opened on movie, where the apply then refused it.)
 
 The native apply method calls the getter (which returns the value the setter staged while browsing) to find the
 confirmed row, then the commit with its alias, and ignores the commit's result; a failed `og_select` drops the staged
-value, so the setting shows `og_selected()` again. The texts are the page's own ids, rewritten in place in the 68
+value. A latched fault overrides all staging and returns the explicit reset status. Only verified runtime state can be shown as Off/4K/5.7K. Five custom sound text ids are rewritten in place in the 68
 banks ([method](../../methods/11-open-gate/README.en.md#menu-item)).

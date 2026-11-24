@@ -1,9 +1,6 @@
-/* Owns the selected mode: the live copy and /setting/open_gate.dat (16 bytes, written to a .tmp file, synced and
- * renamed over the record, like custom_aspect_v2.dat).
- *
- * og_power_on runs on every shooting-screen creation. It applies nothing with the dial on movie (the kit applies on
- * stills only; the next creation retries), and costs nothing while the mode is Off and nothing was applied in this
- * process. Any other failure (coprocessor not ready, I/O) is simply retried on the next creation.
+/* Persistent choice and verified runtime state are separate. A cold process starts unverified.
+ * Hooks never patch in movie mode. Only startup NOT_READY/BUSY failures may retry automatically;
+ * a write/validation failure latches until the process is cold-started. The menu exposes that state.
  */
 #include "og_internal.h"
 #include "og_sys.h"
@@ -22,11 +19,11 @@ static const char record_path[] = OG_SETTING_DIR "/open_gate.dat";
 static const char temporary_path[] = OG_SETTING_DIR "/open_gate.tmp";
 static const char directory_path[] = OG_SETTING_DIR;
 
-enum { UNLOADED = 0, LOADING = 1, LOADED = 2 };
-static uint32_t selected;   /* og_mode, valid once record_state == LOADED */
-static uint32_t record_state;
+static uint32_t selected;          /* persisted choice; only accessed under busy */
+static uint32_t loaded;
 static uint32_t busy;
-static uint32_t applied;    /* a reconcile to an open-gate mode ran in this process */
+static uint32_t active_plus_one;   /* 0 = unverified; otherwise verified mode + 1 */
+static uint32_t fault;             /* nonzero: stop writes until a cold process restart */
 
 og_mode og_record_load(void)
 {
@@ -54,16 +51,11 @@ og_status og_record_save(og_mode mode)
     return synced || closed ? OG_NOT_SAVED : OG_OK;
 }
 
-/* Load the record once per process; a concurrent caller sees Off until it is loaded. */
+/* Only called with busy held; UI getters never race record loading against a save. */
 static og_mode load_once(void)
 {
-    uint32_t expected = UNLOADED;
-    if (__atomic_compare_exchange_n(&record_state, &expected, LOADING, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-        __atomic_store_n(&selected, (uint32_t)og_record_load(), __ATOMIC_RELAXED);
-        __atomic_store_n(&record_state, LOADED, __ATOMIC_RELEASE);
-    }
-    return __atomic_load_n(&record_state, __ATOMIC_ACQUIRE) == LOADED ? (og_mode)__atomic_load_n(&selected, __ATOMIC_RELAXED)
-                                                               : OG_OFF;
+    if (!loaded) { selected = (uint32_t)og_record_load(); loaded = 1; }
+    return (og_mode)selected;
 }
 
 static int in_movie(void)
@@ -72,17 +64,20 @@ static int in_movie(void)
     return dial && *dial == OG_DIAL_MOVIE;
 }
 
-static og_status reconcile(og_mode mode)
+static void publish(og_mode mode, og_status status, int terminal)
 {
-    if (mode != OG_OFF) __atomic_store_n(&applied, 1, __ATOMIC_RELAXED);
-    return og_reconcile(mode);
+    __atomic_store_n(&active_plus_one, status == OG_OK ? (uint32_t)mode + 1u : 0u, __ATOMIC_RELEASE);
+    if (status != OG_OK && (terminal || (status != OG_NOT_READY && status != OG_BUSY)))
+        __atomic_store_n(&fault, (uint32_t)status, __ATOMIC_RELEASE);
 }
 
 void og_power_on(void)
 {
     if (in_movie() || __atomic_exchange_n(&busy, 1, __ATOMIC_ACQUIRE)) return;
-    og_mode mode = load_once();
-    if (mode != OG_OFF || __atomic_load_n(&applied, __ATOMIC_RELAXED)) (void)reconcile(mode);
+    if (!__atomic_load_n(&fault, __ATOMIC_ACQUIRE)) {
+        og_mode mode = load_once();
+        publish(mode, og_reconcile(mode), 0);
+    }
     __atomic_store_n(&busy, 0, __ATOMIC_RELEASE);
 }
 
@@ -91,14 +86,33 @@ og_status og_select(og_mode mode)
     if ((unsigned)mode >= OG_MODE_COUNT) return OG_FOREIGN;
     if (in_movie()) return OG_WRONG_DIAL;
     if (__atomic_exchange_n(&busy, 1, __ATOMIC_ACQUIRE)) return OG_BUSY;
-    (void)load_once();
-    og_status s = reconcile(mode);
+    og_status s = (og_status)__atomic_load_n(&fault, __ATOMIC_ACQUIRE);
+    if (s != OG_OK) goto done;
+    og_mode previous = load_once();
+    /* Do not change live mode if persistence fails. Even a post-rename fsync error is
+     * unconfirmed, so expose a fault instead of claiming the requested mode is active. */
+    s = og_record_save(mode);
     if (s == OG_OK) {
-        if (og_record_save(mode) != OG_OK) s = OG_NOT_SAVED;
-        __atomic_store_n(&selected, (uint32_t)mode, __ATOMIC_RELAXED);
+        selected = (uint32_t)mode;
+        s = og_reconcile(mode);
+        if (s != OG_OK) {
+            /* Restore the prior saved choice as well as the runtime rollback performed
+             * by og_reconcile. Never replace the more serious UNDO_FAILED status. */
+            if (og_record_save(previous) == OG_OK) selected = (uint32_t)previous;
+            else if (s != OG_UNDO_FAILED) s = OG_NOT_SAVED;
+        }
     }
+    publish(mode, s, 1);
+ done:
     __atomic_store_n(&busy, 0, __ATOMIC_RELEASE);
     return s;
 }
 
-og_mode og_selected(void) { return load_once(); }
+og_mode og_selected(void)
+{
+    if (__atomic_load_n(&busy, __ATOMIC_ACQUIRE) || __atomic_load_n(&fault, __ATOMIC_ACQUIRE)) return OG_UNVERIFIED;
+    uint32_t active = __atomic_load_n(&active_plus_one, __ATOMIC_ACQUIRE);
+    return active && !__atomic_load_n(&busy, __ATOMIC_ACQUIRE) ? (og_mode)(active - 1u) : OG_UNVERIFIED;
+}
+
+int og_faulted(void) { return __atomic_load_n(&fault, __ATOMIC_ACQUIRE) != 0; }

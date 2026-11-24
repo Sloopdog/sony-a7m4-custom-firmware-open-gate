@@ -21,7 +21,14 @@ static inline long og_openat(const char *path, long flags, long mode) { return o
 static inline long og_close(long fd) { return close((int)fd); }
 static inline long og_read(long fd, void *dst, unsigned long n) { return read((int)fd, dst, n); }
 static inline long og_write(long fd, const void *src, unsigned long n) { return write((int)fd, src, n); }
-static inline long og_fsync(long fd) { return fsync((int)fd); }
+static inline long og_fsync(long fd)
+{
+#ifdef OG_HOST_IO_FAULTS
+    extern int og_host_fail_sync;
+    if (og_host_fail_sync > 0 && --og_host_fail_sync == 0) return -1;
+#endif
+    return fsync((int)fd);
+}
 static inline long og_rename(const char *from, const char *to) { return renameat(AT_FDCWD, from, AT_FDCWD, to); }
 
 #else

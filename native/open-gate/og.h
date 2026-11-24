@@ -6,7 +6,7 @@
 #ifndef OG_H
 #define OG_H
 
-typedef enum { OG_OFF = 0, OG_4K_32 = 1, OG_57K_32 = 2, OG_MODE_COUNT } og_mode;
+typedef enum { OG_OFF = 0, OG_4K_32 = 1, OG_57K_32 = 2, OG_MODE_COUNT, OG_UNVERIFIED = OG_MODE_COUNT } og_mode;
 
 typedef enum {
     OG_OK = 0,
@@ -22,10 +22,13 @@ typedef enum {
 /* Shooting-screen hook: bring memory to the saved mode. Also runs after a short power-off. */
 void og_power_on(void);
 
-/* Menu confirm: stills only; reconcile to mode, then save it. */
+/* Menu confirm: persist first, then reconcile. Failed operations require a cold restart. */
 og_status og_select(og_mode mode);
 
-/* Menu getter: the saved mode. */
+/* Verified runtime mode, or OG_UNVERIFIED (never a selectable recording mode). */
 og_mode og_selected(void);
+
+/* Latched failure: callers must not hide the reset indication with a staged selection. */
+int og_faulted(void);
 
 #endif

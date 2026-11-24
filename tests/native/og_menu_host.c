@@ -19,6 +19,8 @@ static int failures;
 
 /* --- fake og.h ------------------------------------------------------------------------------------------------ */
 static og_mode selected_mode;
+static int faulted;
+int og_faulted(void) { return faulted; }
 static og_status select_status;
 static int select_calls;
 static og_mode select_last;
@@ -57,7 +59,7 @@ int main(void)
     selected_mode = OG_OFF;
     og_menu_setter(OG_57K_32);
     CHECK("setter stages the browsed value", og_menu_getter() == OG_57K_32 && select_calls == 0);
-    og_menu_setter(OG_MODE_COUNT);
+    og_menu_setter(OG_UNVERIFIED + 1);
     CHECK("setter ignores an unknown raw value", og_menu_getter() == OG_57K_32);
 
     /* commit: og_select with each option's mode; nonzero only for OG_OK */
@@ -85,6 +87,16 @@ int main(void)
     CHECK("commit refuses an alias above the item's",
           og_menu_commit(OG_MENU_ALIAS_BASE + OG_MODE_COUNT) == 0 && og_menu_commit(0xffffffffu) == 0 &&
               select_calls == calls);
+
+    selected_mode = OG_UNVERIFIED;
+    CHECK("unverified state has a real status row", og_menu_getter() == OG_UNVERIFIED);
+    og_menu_setter(OG_4K_32);
+    faulted = 1;
+    CHECK("fault cannot be hidden by staging", og_menu_getter() == OG_UNVERIFIED);
+    og_menu_setter(OG_57K_32);
+    CHECK("fault rejects further browsing", og_menu_getter() == OG_UNVERIFIED);
+    faulted = 0;
+    og_menu_commit(OG_MENU_ALIAS_BASE + OG_UNVERIFIED);
 
     /* disabled: 1 = the camera shows "currently disabled", so 1 in movie only; every other mid goes to the previous
      * check */

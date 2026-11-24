@@ -32,22 +32,22 @@
   "sha256": "c65cd34917923f575448cc0603dd7c2326da0af0e5c323043d090662dcdf351c"
  },
  "sources": {
-  "og.c": "d3487920508904dfd4295200dcb52fdb3781408e96579bbbfe06ee32e4cfc262",
+  "og.c": "5396e7e314beef520c2e1d0e156f07ad97bb0c4543530ac81c3cb7cf05d50176",
   "og_reconcile.c": "56efb86ea61ec2c5bbe02604e8beefd9bb7e8123659da8eb9f9d85d24e3c5322",
   "og_mem.c": "aea4f61135959ae1defdb1ff01c18aba16369dabd10857b52a46cff6ff6bcc25",
   "og_util.c": "caf8fdf9e3f29420f44570a22cc0f7167c8a65c01124e529e246615d485e2d47",
-  "og_menu.c": "cbf1561aab8386408ad4fa7a7f8c29212aebb8eeb2ede735097d207800bc2e39",
+  "og_menu.c": "e5104ee7cec98efa3d4b941bdea9aafc6e7d722f09cf27ae986dd528163d67b5",
   "og_entry.S": "bb3b1e1ce81ba7aa905b25827627ce5462a714cef81df628fbce2fcd5899004b",
   "og_sites.S": "1657b32224cdc6e7d319550bc944486e03552b37a2f33d4da04143ea8795978d",
-  "og.h": "747613c420a0b9af624a3fb0d7cc2fca1343349dc86477427f775b7161fd59ae",
+  "og.h": "9a673e896de0da40c2c39ed37b17f603252e9678b12f6529eaf5558ddf6ccc64",
   "og_internal.h": "cd6327a82a0479c5543fae75a3d27af9df80ffa6911e7ef3826ed1e49004ef70",
   "og_image.h": "feacf8160b1b28d0def68d423ad2a05a148f4c0ada83366a12a77d9bcd483b91",
-  "og_sys.h": "d9376106c89f29fea29f2d374ef87b5dc30692f10920b5c8e18d7471b9d6db8a",
-  "og_menu.h": "0641b8a0f8fde1fe7e73d217b1c7cefd7186126d65689de589b8fdfae63ad5d6"
+  "og_sys.h": "fe8529d19b5cbd65e3d28ada9ae0355f2f66be47634a6d14cc4c0c09cde9ebe5",
+  "og_menu.h": "15756a424316960ab992b8a1634b180e4b7c51654b2eccb2b156e88264640665"
  },
  "module": {
-  "text_bytes": 46444,
-  "text_sha256": "d991841ac0634ce27d6082743ab052fcfff111df05bdd036db058f333040fd9b",
+  "text_bytes": 46572,
+  "text_sha256": "0056c3258b6d3b35e94590eea02d5fd22a2d9f958e10eec93130b4dbb5ab364e",
   "what": "the linked .text (code, strings, site image) for these sources, designs and compiler"
  },
  "appfw": {
@@ -124,7 +124,7 @@
   ]
  },
  "menu": {
-  "what": "The Open Gate setting takes over the custom firmware's Custom Shutter Sound page (mid 1592) and its switch (mid 1593): the page is renamed Open Gate and listed on MENU > Shooting > Media; both sound pages leave Shooting > Shutter/Silent; the switch keeps only itself on the page, gets a third option row and its callbacks point at og_menu.c. Its mids and option ids are the custom firmware's own, already in every native map and accepted by its id filters (supported/mapped 0x8f900a0/0x8f900b8 for 1592..1597, apply skip 0x8f900d0, option ids 5607..5630 at 0x8fa1000). compose_ap checks every old value here in v0.1.3 before writing.",
+  "what": "Reuse the four existing sound option aliases; three modes plus an unverified/fault status. Rows live in reserved module RW padding, separate from BSS.",
   "page_mid": 1592,
   "mid": 1593,
   "alias_base": 5607,
@@ -133,7 +133,8 @@
    "title": "0x0200ab5f",
    "off": "0x0200a00f",
    "uhd_32": "0x0200ab61",
-   "k57_32": "0x0200ab62"
+   "k57_32": "0x0200ab62",
+   "unverified": "0x0200ab5d"
   },
   "groups": {
    "what": "menu groups: 16-byte header {id, title, count, 0} and 30 entries {u64 mid, u64 leaf, u64 page}",
@@ -194,28 +195,45 @@
    "options": 2,
    "rows": "0x8fc0610",
    "help": "0x02008894",
-   "what": "the switch's leaf (0xc0): +0x0c help, +0x54 option count, +0x58 rows (contiguous, 0x80 each)"
+   "what": "the switch's leaf (0xc0): +0x0c help, +0x54 option count, +0x58 rows (contiguous, 0x80 each)",
+   "new_rows": "0x907fc00"
   },
   "rows": [
    {
-    "va": "0x8fc0610",
+    "va": "0x907fc00",
     "alias": 5607,
     "text": "off",
-    "was_text": "0x0200a024"
+    "from": "0x8fc0610",
+    "old_value": 0,
+    "was_text": "0x200a024",
+    "row_id": "0x1203ee"
    },
    {
-    "va": "0x8fc0690",
+    "va": "0x907fc80",
     "alias": 5608,
     "text": "uhd_32",
-    "was_text": "0x0200a00f"
+    "from": "0x8fc0690",
+    "old_value": 1,
+    "was_text": "0x200a00f",
+    "row_id": "0x1203ef"
    },
    {
-    "va": "0x8fc0710",
+    "va": "0x907fd00",
     "alias": 5609,
     "text": "k57_32",
     "from": "0x8fc0920",
-    "row_id": "0x001203f0",
-    "what": "new: the focus switch's first row (alias 5609), moved after the other two over the listed focus page's header, which only the Shutter/Silent entry pointed at"
+    "old_value": 0,
+    "was_text": "0x200a024",
+    "row_id": "0x1203f0"
+   },
+   {
+    "va": "0x907fd80",
+    "alias": 5610,
+    "text": "unverified",
+    "from": "0x8fc09a0",
+    "old_value": 1,
+    "was_text": "0x200a00f",
+    "row_id": "0x1203f1"
    }
   ],
   "row_fields": {
@@ -225,18 +243,6 @@
    "images": "0x20",
    "value": "0x34",
    "row_id": "0x74"
-  },
-  "parent_pair": {
-   "va": "0x8f91c80",
-   "old": [
-    5609,
-    1596
-   ],
-   "new": [
-    5609,
-    1593
-   ],
-   "what": "option-to-leaf pair the custom firmware registers (0x8f91c28, registrar 0x1cd1934)"
   },
   "relocations": {
    "what": "R_AARCH64_RELATIVE entries changed in place (r_offset, addend); a symbol name is a module symbol. Entries moved to the Media slot's page field duplicate its own and leave no stale pointer behind.",
@@ -254,20 +260,6 @@
      "to": "0x50fc318",
      "new": "0x8fc0400",
      "what": "Shutter/Silent entry 12 (1595) page, now unused"
-    },
-    {
-     "r_offset": "0x8fc0730",
-     "addend": "0x1c9efbc",
-     "to": "0x50fc318",
-     "new": "0x8fc0400",
-     "what": "listed focus page +0x20, now inside the third row"
-    },
-    {
-     "r_offset": "0x8fc0788",
-     "addend": "0x8fc07a0",
-     "to": "0x50fc318",
-     "new": "0x8fc0400",
-     "what": "listed focus page child 1596, now inside the third row"
     },
     {
      "r_offset": "0x8fc0508",
@@ -291,23 +283,77 @@
      "what": "switch leaf +0x88 commit"
     },
     {
+     "r_offset": "0x8fc04e8",
+     "addend": "0x8fc0610",
+     "to": "0x8fc04e8",
+     "new": "0x907fc00",
+     "what": "Row table pointer"
+    },
+    {
+     "r_offset": "0x8fc0a88",
+     "addend": "0x8fc0610",
+     "to": "0x8fc0a88",
+     "new": "0x907fc00",
+     "what": "Row table pointer"
+    },
+    {
+     "r_offset": "0x8fc0a98",
+     "addend": "0x8fc0690",
+     "to": "0x8fc0a98",
+     "new": "0x907fc80",
+     "what": "Row table pointer"
+    },
+    {
      "r_offset": "0x8fc0aa8",
      "addend": "0x8fc0920",
      "to": "0x8fc0aa8",
-     "new": "0x8fc0710",
-     "what": "option map entry 5609 -> the third row"
+     "new": "0x907fd00",
+     "what": "Row table pointer"
+    },
+    {
+     "r_offset": "0x8fc0ab8",
+     "addend": "0x8fc09a0",
+     "to": "0x8fc0ab8",
+     "new": "0x907fd80",
+     "what": "Row table pointer"
     }
    ]
   },
   "strings": {
-   "what": "68 horizontal/vertical UXC banks: the sound page's own texts are rewritten in place (same record, NUL padded); nothing else changes",
+   "what": "68 banks, only custom sound strings replaced; status includes the former focus-page title.",
    "banks": 68,
    "replace": {
     "0x0200ab5c": "Open Gate",
     "0x0200ab5f": "Mode",
     "0x0200ab61": "4K 3:2",
-    "0x0200ab62": "5.7K 3:2"
+    "0x0200ab62": "5.7K 3:2",
+    "0x0200ab5d": "Reset in stills"
    }
-  }
+  },
+  "parent_pairs": [
+   {
+    "va": "0x8f91c80",
+    "old": [
+     5609,
+     1596
+    ],
+    "new": [
+     5609,
+     1593
+    ],
+    "what": "option-to-leaf pair the custom firmware registers (0x8f91c28, registrar 0x1cd1934)"
+   },
+   {
+    "va": "0x8f91c88",
+    "old": [
+     5610,
+     1596
+    ],
+    "new": [
+     5610,
+     1593
+    ]
+   }
+  ]
  }
 }

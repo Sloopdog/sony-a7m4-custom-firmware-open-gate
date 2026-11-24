@@ -19,6 +19,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "og_image.h"
+#include "og_menu.h"
+uint32_t og_menu_previous_disabled(uint32_t mid) { (void)mid; return 0; }
+int og_host_fail_sync;
 
 #define CP_SIZE 0x2000000u
 #define RECORD_BYTES 348u
@@ -168,7 +171,17 @@ int main(int argc, char **argv)
         char cmd[32], arg[4000] = "";
         unsigned a = 0, b = 0;
         if (sscanf(line, "%31s", cmd) != 1) continue;
-        if (!strcmp(cmd, "seed") && sscanf(line, "%*s %u %u %3999s", &a, &b, arg) == 3) {
+        if (!strcmp(cmd, "menu_get")) {
+            printf("mode %u\n", og_menu_getter());
+        } else if (!strcmp(cmd, "menu_set") && sscanf(line, "%*s %u", &a) == 1) {
+            og_menu_setter(a); printf("ok\n");
+        } else if (!strcmp(cmd, "menu_commit") && sscanf(line, "%*s %u", &a) == 1) {
+            printf("commit %d\n", og_menu_commit(a));
+        } else if (!strcmp(cmd, "faulted")) {
+            printf("fault %d\n", og_faulted());
+        } else if (!strcmp(cmd, "fail_sync") && sscanf(line, "%*s %u", &a) == 1) {
+            og_host_fail_sync = (int)a; printf("ok\n");
+        } else if (!strcmp(cmd, "seed") && sscanf(line, "%*s %u %u %3999s", &a, &b, arg) == 3) {
             unsigned len = (unsigned)strlen(arg) / 2;
             uint8_t *p = at((og_space)a, b, len, 0, camera_family), *q = at((og_space)a, b, len, 1, camera_family);
             if (!p) { printf("error\n"); continue; }

@@ -189,7 +189,7 @@ def _rela_table(appfw: bytes, elf):
 def _take_over_sound_page(out: bytearray, appfw: bytes, elf, loads, symbols: Mapping[str, int], layout: dict) -> None:
     """Turn the custom firmware's Custom Shutter Sound page into the Open Gate page (layout.json "menu"): list it on
     Shooting > Media instead of Shooting > Shutter/Silent (where the focus sound page goes too), keep only its switch,
-    give the switch a third option row and point its callbacks at the module. Every old value is checked in appfw
+    give the switch three mode rows and one status row and point its callbacks at the module. Every old value is checked in appfw
     before anything is written; .rela.dyn keeps its size (entries are changed in place)."""
     menu = layout["menu"]
     table = _rela_table(appfw, elf)
@@ -199,6 +199,10 @@ def _take_over_sound_page(out: bytearray, appfw: bytes, elf, loads, symbols: Map
     moved = {_int(r["r_offset"]) for r in retarget}
 
     def offset(va: int, size: int) -> int:
+        rw = layout["appfw"]["rw"]
+        start, room = _int(rw["va"]), _int(rw["max_bytes"])
+        if start <= va and va + size <= start + room:
+            return _int(rw["file_offset"]) + va - start
         return _file_offset(loads, va, size)
 
     def u32(va: int) -> int:
@@ -253,14 +257,15 @@ def _take_over_sound_page(out: bytearray, appfw: bytes, elf, loads, symbols: Map
     require(u32(focus) == text["page"] + 1 and u32(_int(pages["focus"]["live"])) == text["page"] + 1, "OG_MENU",
             "Focus sound page is not the expected one")
 
-    # The switch: no sound help text, three options.
-    rows, count = _int(leaf_spec["rows"]), leaf_spec["options"]
+    # Three recording modes and one non-applying status row.
+    old_rows, count = _int(leaf_spec["rows"]), leaf_spec["options"]
+    rows = _int(leaf_spec["new_rows"])
     require(u32(leaf) == text["title"] and u32(leaf + 0x0c) == _int(leaf_spec["help"]) and u32(leaf + 0x54) == count
-            and relative(leaf + 0x58) == rows, "OG_MENU", "Sound switch leaf is not the expected one")
+            and relative(leaf + 0x58) == old_rows, "OG_MENU", "Sound switch leaf is not the expected one")
     put32(leaf + 0x0c, 0xFFFFFFFF)
     put32(leaf + 0x54, len(menu["rows"]))
 
-    # Its rows: text only, values 0..2 = og_mode; the third is the focus switch's row moved after the other two.
+    # Copy the four registered sound rows into reserved RW padding; 0..2 are modes, 3 is status.
     f = {k: _int(v) for k, v in menu["row_fields"].items() if k != "what"}
     for index, spec in enumerate(menu["rows"]):
         va, alias = _int(spec["va"]), spec["alias"]
@@ -268,8 +273,8 @@ def _take_over_sound_page(out: bytearray, appfw: bytes, elf, loads, symbols: Map
         source = _int(spec.get("from", spec["va"]))
         record = bytearray(appfw[offset(source, 0x80):offset(source, 0x80) + 0x80])
         old = struct.unpack_from("<32I", record)
-        require(old[0] == old[1] == alias and old[f["value"] // 4] == (0 if "from" in spec else index)
-                and ("from" in spec or old[f["text"] // 4] == _int(spec["was_text"])), "OG_MENU",
+        require(old[0] == old[1] == alias and old[f["value"] // 4] == spec["old_value"]
+                and old[f["text"] // 4] == _int(spec["was_text"]), "OG_MENU",
                 f"Row {source:#x} is not the expected one")
         for field, value in ((f["text"], text[spec["text"]]), (f["help"], text[spec["text"]]),
                              (f["images"], 0xFFFFFFFF), (f["images"] + 4, 0xFFFFFFFF), (f["value"], index)):
@@ -283,11 +288,11 @@ def _take_over_sound_page(out: bytearray, appfw: bytes, elf, loads, symbols: Map
                     and {int(x) for x in table[into, 0]} <= moved, "OG_MENU", f"{va:#x} is still referenced")
         put(offset(va, 0x80), bytes(record))
 
-    # The option-to-leaf pair of the moved row.
-    pair = menu["parent_pair"]
-    at = offset(_int(pair["va"]), 8)
-    require(list(struct.unpack_from("<II", appfw, at)) == pair["old"], "OG_MENU", "Parent pair is not the expected one")
-    put(at, struct.pack("<II", *pair["new"]))
+    # Reparent both focus-switch aliases to the Open Gate setting.
+    for pair in menu["parent_pairs"]:
+        at = offset(_int(pair["va"]), 8)
+        require(list(struct.unpack_from("<II", appfw, at)) == pair["old"], "OG_MENU", "Parent pair is not the expected one")
+        put(at, struct.pack("<II", *pair["new"]))
 
     # Relocations, changed in place; the file bytes each one fills get the same value.
     for r in retarget:
@@ -318,6 +323,10 @@ def compose_ap(appfw: bytes, module: Module, layout: dict) -> bytes:
     require(gap_end - gap == ap["free_gap"]["bytes"] and not any(appfw[gap:gap_end]), "OG_BASELINE", "Gap not zero")
     new = [(5, _int(ap["rx"]["file_offset"]), module.text_va, len(module.text), _int(ap["rx"]["max_bytes"])),
            (6, _int(ap["rw"]["file_offset"]), module.state_va, _int(ap["rw"]["max_bytes"]), _int(ap["rw"]["max_bytes"]))]
+    rows = _int(layout["menu"]["leaf"]["new_rows"])
+    row_end = rows + 0x80 * len(layout["menu"]["rows"])
+    require(module.state_va + module.state_bytes <= rows and row_end <= module.state_va + _int(ap["rw"]["max_bytes"]),
+            "OG_LAYOUT", "Menu rows overlap module state or exceed the RW segment")
     require(module.text_va == _int(ap["rx"]["va"]) and module.state_va == _int(ap["rw"]["va"])
             and module.state_bytes <= _int(ap["rw"]["max_bytes"]), "OG_LAYOUT", "Module VAs differ from layout.json")
     loads = [s for s in elf.iter_segments() if s["p_type"] == "PT_LOAD"]

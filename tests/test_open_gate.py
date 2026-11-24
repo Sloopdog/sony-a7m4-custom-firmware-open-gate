@@ -278,9 +278,9 @@ def host(image, files, tmp_path_factory):
     (tmp / "og_config.h").write_text(_config_header(_layout(), RECORD))
     binary = tmp / "og_host"
     subprocess.run([clang, "-std=c11", "-D_DEFAULT_SOURCE", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-fno-strict-aliasing",
-                    "-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-DOG_HOST",
+                    "-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-DOG_HOST", "-DOG_HOST_IO_FAULTS",
                     f"-DOG_SETTING_DIR=\"{tmp / 'setting'}\"", "-I", str(_NATIVE), "-I", str(tmp),
-                    str(_ROOT / "tests/native/og_host.c"), str(_NATIVE / "og_reconcile.c"), str(_NATIVE / "og.c"),
+                    str(_ROOT / "tests/native/og_host.c"), str(_NATIVE / "og_reconcile.c"), str(_NATIVE / "og.c"), str(_NATIVE / "og_menu.c"),
                     str(tmp / "og_sites_host.c"), "-o", str(binary)], check=True)
     return binary
 
@@ -381,8 +381,9 @@ def test_not_ready_writes_nothing(camera):
 
 def test_select_persists_and_power_on_restores(host, image, files, setting):
     first = Camera(host, files, Family.NTSC, image)
+    assert first.send("selected") == ["mode", "3"]
+    assert first.send("power_on")[3] == "0"   # verify Off before displaying it
     assert first.send("selected") == ["mode", "0"]
-    assert first.send("power_on") == ["reads", "0", "writes", "0"]   # Off and nothing applied: no memory access
     assert first.send("dial 3") == ["ok"]
     assert first.status("select 1")[0] == WRONG_DIAL
     assert first.send("dial 0") == ["ok"]
@@ -398,6 +399,8 @@ def test_select_persists_and_power_on_restores(host, image, files, setting):
     assert second.send("dial 3") == ["ok"]
     assert second.send("power_on")[3] == "0"        # movie: nothing written
     assert second.diff() == {}
+    assert second.send("selected") == ["mode", "3"]
+    assert second.send("menu_get") == ["mode", "3"]
     assert second.send("dial 0") == ["ok"]
     second.send("power_on")
     assert second.diff() == state_of(Mode.UHD_32, Family.NTSC)
@@ -419,6 +422,113 @@ def test_bad_record_files_mean_off(host, image, files, setting):
     cam = Camera(host, files, Family.NTSC, image)
     assert cam.send("load") == ["mode", "2"]
     cam.close()
+
+
+@both
+def test_startup_not_ready_never_claims_saved_mode(camera, setting):
+    # A saved request is not evidence of applied bytes, even if the getter runs first.
+    (setting / "open_gate.dat").write_bytes(struct.pack("<4sIII", b"OGT1", 1, 2, 0xfffffffd))
+    assert camera.send("menu_get") == ["mode", "3"]
+    camera.send("ready 0")
+    assert camera.send("power_on") == ["reads", "0", "writes", "0"]
+    assert camera.send("menu_get") == ["mode", "3"] and camera.diff() == {}
+    camera.send("ready 1")
+    camera.send("dial 3")
+    assert camera.send("power_on") == ["reads", "0", "writes", "0"]
+    assert camera.send("menu_get") == ["mode", "3"] and camera.diff() == {}
+    camera.send("dial 0")
+    camera.send("power_on")
+    assert camera.send("menu_get") == ["mode", "2"]
+    assert camera.diff() == state_of(Mode.K57_32, camera.family)
+
+
+@both
+@pytest.mark.parametrize("how", ["after", "all"])
+def test_failed_menu_transition_exposes_and_latches_fault(camera, how):
+    assert camera.status("select 1")[0] == OK
+    before = camera.diff()
+    camera.send(f"fail 10 {how}")
+    camera.send("menu_set 2")
+    assert camera.send("menu_commit 5609") == ["commit", "0"]
+    after = camera.diff()
+    assert (after == before) == (how == "after")
+    assert camera.send("menu_get") == ["mode", "3"]
+    assert camera.send("faulted") == ["fault", "1"]
+    # Staging another choice, another screen hook, and explicit Off must not hide
+    # the failure or attempt more writes in this process.
+    camera.send("menu_set 0")
+    assert camera.send("menu_get") == ["mode", "3"]
+    assert camera.send("power_on") == ["reads", "0", "writes", "0"]
+    status, reads, writes = camera.status("select 0")
+    assert (status, reads, writes) == (IO if how == "after" else UNDO_FAILED, 0, 0)
+    assert camera.diff() == after
+    assert camera.send("load") == ["mode", "1"]   # restore previous persisted choice too
+
+
+@both
+def test_off_cannot_appear_successful_when_record_cannot_be_opened(camera, setting):
+    assert camera.status("select 2")[0] == OK
+    before = camera.diff()
+    blocked = setting / "open_gate.tmp"
+    blocked.mkdir()
+    try:
+        camera.send("menu_set 0")
+        assert camera.send("menu_commit 5607") == ["commit", "0"]
+        assert camera.send("menu_get") == ["mode", "3"]  # never falsely show Off
+        assert camera.diff() == before                   # storage checked before memory writes
+        assert camera.send("load") == ["mode", "2"]
+        assert camera.send("faulted") == ["fault", "1"]
+    finally:
+        blocked.rmdir()
+
+
+@both
+@pytest.mark.parametrize("sync_call", [1, 2])
+def test_save_sync_failure_before_or_after_rename_never_changes_live_mode(camera, sync_call):
+    assert camera.status("select 2")[0] == OK
+    before = camera.diff()
+    camera.send(f"fail_sync {sync_call}")
+    assert camera.status("select 0") == (NOT_SAVED, 0, 0)
+    assert camera.diff() == before and camera.send("menu_get") == ["mode", "3"]
+    assert camera.send("load") == ["mode", "2" if sync_call == 1 else "0"]
+    assert camera.send("power_on") == ["reads", "0", "writes", "0"]
+
+
+def test_failed_persistence_rollback_keeps_fault_visible(camera):
+    assert camera.status("select 1")[0] == OK
+    before = camera.diff()
+    camera.send("fail 10 after")
+    camera.send("fail_sync 3")  # requested mode saved; restoring previous record cannot sync
+    assert camera.status("select 2")[0] == NOT_SAVED
+    assert camera.diff() == before
+    assert camera.send("load") == ["mode", "2"]  # storage ambiguity is explicitly surfaced
+    assert camera.send("menu_get") == ["mode", "3"]
+    assert camera.send("power_on") == ["reads", "0", "writes", "0"]
+
+
+def test_status_row_is_never_applied_as_a_recording_mode(camera):
+    assert camera.status("select 1")[0] == OK
+    before = camera.diff()
+    camera.send("menu_set 3")
+    assert camera.send("menu_get") == ["mode", "3"]
+    assert camera.send("menu_commit 5610") == ["commit", "0"]
+    assert camera.send("menu_get") == ["mode", "1"]
+    assert camera.diff() == before and camera.send("load") == ["mode", "1"]
+
+
+def test_cold_process_restart_clears_latch_and_verifies_saved_mode(host, image, files, setting):
+    first = Camera(host, files, Family.NTSC, image)
+    assert first.status("select 1")[0] == OK
+    first.send("fail 10 all")
+    assert first.status("select 2")[0] == UNDO_FAILED
+    assert first.send("menu_get") == ["mode", "3"]
+    first.close()
+    second = Camera(host, files, Family.NTSC, image)
+    assert second.send("menu_get") == ["mode", "3"]
+    second.send("power_on")
+    assert second.send("menu_get") == ["mode", "1"]
+    assert second.diff() == state_of(Mode.UHD_32, Family.NTSC)
+    second.close()
 
 
 # --- og_mem.c on the host, unchanged, against fake DMA, /dev/mem and /proc/self/maps --------------------------------
@@ -459,12 +569,12 @@ ZIG = Path(os.environ.get("OG_ZIG", WORKSPACE / "tools/zig-aarch64-macos-0.15.2/
 MENU = _layout()["menu"]
 MID, PAGE_MID, ALIAS = MENU["mid"], MENU["page_mid"], MENU["alias_base"]
 TEXT = {k: int(v, 16) for k, v in MENU["text"].items()}
-OPTION_TEXT = (TEXT["off"], TEXT["uhd_32"], TEXT["k57_32"])
+OPTION_TEXT = (TEXT["off"], TEXT["uhd_32"], TEXT["k57_32"], TEXT["unverified"])
 NATIVE_TRUE = 0x1c9efbc                   # stock "mov w0, #1; ret"
 MEDIA, SILENT = 0x50fc298, 0x50fd3d8      # MENU > Shooting > Media, MENU > Shooting > Shutter/Silent
 GROUP_BYTES = 0x2e0                       # 16-byte header {id, title, count, 0} + 30 entries {u64 mid, leaf*, page*}
 PAGE, LIVE_PAGE, FOCUS_PAGE = 0x8fc0400, 0x8ff8000, 0x8fc0710
-LEAF, ROWS, PROFILE = 0x8fc0490, 0x8fc0610, 0x8fc3d28
+LEAF, ROWS, PROFILE = 0x8fc0490, 0x907fc00, 0x8fc3d28
 SLOT = MEDIA + 16 + 4 * 24                # Media's first free entry
 
 needs_appfw = pytest.mark.skipif(not APPFW.is_file(), reason="no v0.1.3 tree")
@@ -570,7 +680,7 @@ def test_v013_sound_page_is_a_complete_custom_item(v013):
     assert dict(zip(v013.table(0x8fc0a60, 2, 16), (v013.relative(0x8fc0a68 + 16 * i) for i in range(2)))) == \
         {PAGE_MID: LIVE_PAGE, PAGE_MID + 3: 0x8ff86e0}
     options = dict(zip(v013.table(0x8fc0a80, 4, 16), (v013.relative(0x8fc0a88 + 16 * i) for i in range(4))))
-    assert options == {ALIAS: ROWS, ALIAS + 1: ROWS + 0x80, ALIAS + 2: 0x8fc0920, ALIAS + 3: 0x8fc09a0}
+    assert options == {ALIAS: 0x8fc0610, ALIAS + 1: 0x8fc0690, ALIAS + 2: 0x8fc0920, ALIAS + 3: 0x8fc09a0}
     assert v013.table(0x8fc3fa8, 6, 16) == list(range(PAGE_MID, PAGE_MID + 6)) and v013.relative(0x8fc3fb8 + 8) == PROFILE
     assert v013.u32(PROFILE) == MID and v013.relative(PROFILE + 0x48) == v013.relative(PROFILE + 0x50) == NATIVE_TRUE
     assert v013.u32(NATIVE_TRUE) == 0x52800020 and v013.u32(NATIVE_TRUE + 4) == 0xd65f03c0
@@ -600,8 +710,8 @@ def takeover_places(v013):
     rela = v013.elf.get_section_by_name(".rela.dyn")
     places = [(v013.offset(MEDIA + 8), 4), (v013.offset(SLOT), 24), (v013.offset(SILENT + 8), 4),
               (v013.offset(SILENT + 16 + 11 * 24), 48), (v013.offset(PAGE + 0x64), 4), (v013.offset(LIVE_PAGE + 0x64), 4),
-              (v013.offset(LEAF + 0x0c), 4), (v013.offset(LEAF + 0x54), 4), (v013.offset(ROWS), 3 * 0x80),
-              (v013.offset(int(MENU["parent_pair"]["va"], 16)), 8)]
+              (v013.offset(LEAF + 0x0c), 4), (v013.offset(LEAF + 0x54), 4), (0x5e7fc00, 4 * 0x80)]
+    places += [(v013.offset(int(pair["va"], 16)), 8) for pair in MENU["parent_pairs"]]
     for r in MENU["relocations"]["retarget"]:
         index = int((v013.rela[:, 0] == int(r["r_offset"], 16)).nonzero()[0][0])
         places += [(rela["sh_offset"] + 24 * index, 24), (v013.offset(int(r["to"], 16)), 8)]
@@ -627,7 +737,7 @@ def test_composed_media_lists_the_open_gate_page_and_shutter_silent_loses_both_s
     native = group_entries(v013, MEDIA)
     assert [e[0] for e in native] == [188, 189, 193, 194]   # Format, Rec. Media Settings, Recover Image DB, Media Info.
     assert group_entries(out, MEDIA) == native + [(PAGE_MID, 0, PAGE)]
-    assert out.relatives(SLOT + 16) == [PAGE] * 4 and out.relative(SLOT + 8) is None
+    assert out.relatives(SLOT + 16) == [PAGE] * 2 and out.relative(SLOT + 8) is None
     assert not any(out.bytes(SLOT + 24, MEDIA + GROUP_BYTES - SLOT - 24))
     assert group_entries(out, SILENT) == group_entries(v013, SILENT)[:-2]
     freed = SILENT + 16 + 11 * 24
@@ -647,7 +757,7 @@ def test_composed_page_holds_only_the_open_gate_setting(composed, v013):
         assert out.u32(page) == TEXT["page"] and len(page_children(v013, page)) == before
         assert page_children(out, page) == [(MID, LEAF)]
         assert out.bytes(page, 0x64) == v013.bytes(page, 0x64)   # header kept: title, controller 0x2d7, flags
-    assert out.u32(LEAF) == TEXT["title"] and out.u32(LEAF + 0x0c) == 0xffffffff and out.u32(LEAF + 0x54) == 3
+    assert out.u32(LEAF) == TEXT["title"] and out.u32(LEAF + 0x0c) == 0xffffffff and out.u32(LEAF + 0x54) == 4
     assert out.relative(LEAF + 0x58) == ROWS and out.relative(LEAF + 0x70) == NATIVE_TRUE
     for at, name in ((0x78, "og_menu_getter"), (0x80, "og_menu_setter"), (0x88, "og_menu_commit")):
         assert out.relative(LEAF + at) == module.symbols[name] and struct.unpack("<Q", out.bytes(LEAF + at, 8))[0] == module.symbols[name]
@@ -659,24 +769,25 @@ def test_composed_page_holds_only_the_open_gate_setting(composed, v013):
 def test_composed_rows_are_off_4k_and_57k(composed, v013):
     _, out = composed
     f = {k: int(v, 16) for k, v in MENU["row_fields"].items() if k != "what"}
-    for i in range(3):
+    for i in range(4):
         row = ROWS + 0x80 * i
         assert out.u32(row) == out.u32(row + 4) == ALIAS + i
         assert out.u32(row + f["text"]) == out.u32(row + f["help"]) == OPTION_TEXT[i]
         assert out.u32(row + f["images"]) == out.u32(row + f["images"] + 4) == 0xffffffff and out.u32(row + f["value"]) == i
-        source = 0x8fc0920 if i == 2 else row   # the third row is the focus switch's first, moved
+        source = (0x8fc0610, 0x8fc0690, 0x8fc0920, 0x8fc09a0)[i]   # the third row is the focus switch's first, moved
         kept = [k for k in range(0, 0x80, 4) if k not in (f["text"], f["help"], f["images"], f["images"] + 4, f["value"], f["row_id"])]
         assert [out.u32(row + k) for k in kept] == [v013.u32(source + k) for k in kept]
         assert out.u32(row + f["row_id"]) == 0x001203ee + i
         assert not ((out.rela[:, 0] >= row) & (out.rela[:, 0] < row + 0x80)).any()
     options = dict(zip(out.table(0x8fc0a80, 4, 16), (out.relative(0x8fc0a88 + 16 * i) for i in range(4))))
-    assert options == {ALIAS: ROWS, ALIAS + 1: ROWS + 0x80, ALIAS + 2: ROWS + 0x100, ALIAS + 3: 0x8fc09a0}
+    assert options == {ALIAS: ROWS, ALIAS + 1: ROWS + 0x80, ALIAS + 2: ROWS + 0x100, ALIAS + 3: ROWS + 0x180}
     pairs = [struct.unpack("<II", out.bytes(0x8f91c50 + 8 * i, 8)) for i in range(8)]
     assert pairs[:4] == [(ALIAS + i, ALIAS + i) for i in range(4)]                     # value map: unchanged
-    assert pairs[4:] == [(ALIAS, MID), (ALIAS + 1, MID), (ALIAS + 2, MID), (ALIAS + 3, MID + 3)]   # option -> leaf
-    # Nothing points at the bytes the third row replaced, except the option map entry that now names it.
-    into = (out.rela[:, 2] >= FOCUS_PAGE) & (out.rela[:, 2] < FOCUS_PAGE + 0x80)
-    assert [int(x) for x in out.rela[into, 0]] == [0x8fc0aa8]
+    assert pairs[4:] == [(ALIAS, MID), (ALIAS + 1, MID), (ALIAS + 2, MID), (ALIAS + 3, MID)]   # option -> leaf
+    # Status row never aliases BSS or old menu records; all original rows remain byte-identical.
+    assert ROWS >= composed[0].state_va + composed[0].state_bytes
+    for at in (0x8fc0610, 0x8fc0690, 0x8fc0920, 0x8fc09a0):
+        assert out.bytes(at, 0x80) == v013.bytes(at, 0x80)
 
 
 def test_composed_relocations_change_only_the_listed_entries(composed, v013):
@@ -698,14 +809,14 @@ def test_takeover_refuses_another_layout(v013):
     symbols = {"og_menu_getter": 0x9063000, "og_menu_setter": 0x9063010, "og_menu_commit": 0x9063020}
     _take_over_sound_page(bytearray(v013.data), v013.data, v013.elf, v013.loads, symbols, lay)
     for va, message in ((MEDIA + 8, "Group"), (SILENT + 16 + 12 * 24 + 16, "two sound pages"), (PAGE + 0x64, "Sound page"),
-                        (LEAF + 0x54, "switch leaf"), (0x8fc0920, "Row"), (ROWS + 0x80 + 8, "Row"),
-                        (int(MENU["parent_pair"]["va"], 16) + 4, "Parent pair")):
+                        (LEAF + 0x54, "switch leaf"), (0x8fc0920, "Row"), (0x8fc0690 + 8, "Row"),
+                        (int(MENU["parent_pairs"][0]["va"], 16) + 4, "Parent pair")):
         tampered = bytearray(v013.data)
         tampered[v013.offset(va)] ^= 1
         with pytest.raises(ToolError, match=message):
             _take_over_sound_page(bytearray(tampered), bytes(tampered), v013.elf, v013.loads, symbols, lay)
     moved = json.loads(json.dumps(lay))
-    moved["menu"]["relocations"]["retarget"][4]["addend"] = "0x8f97f64"
+    next(r for r in moved["menu"]["relocations"]["retarget"] if r["r_offset"] == "0x8fc0508")["addend"] = "0x8f97f64"
     with pytest.raises(ToolError, match="Relocation at 0x8fc0508"):
         _take_over_sound_page(bytearray(v013.data), v013.data, v013.elf, v013.loads, symbols, moved)
     with pytest.raises(ToolError, match="og_menu_commit"):
@@ -745,7 +856,7 @@ REPLACED = {int(k, 16): v for k, v in MENU["strings"]["replace"].items()}
 def test_every_bank_names_the_page_setting_and_options(banks):
     assert len(banks) == 68
     assert REPLACED == {TEXT["page"]: "Open Gate", TEXT["title"]: "Mode", TEXT["uhd_32"]: "4K 3:2",
-                        TEXT["k57_32"]: "5.7K 3:2"}
+                        TEXT["k57_32"]: "5.7K 3:2", TEXT["unverified"]: "Reset in stills"}
     for path, (old, new, evidence) in banks.items():
         before, after = _uxc_texts(old), _uxc_texts(new)
         assert len(new) == len(old), path

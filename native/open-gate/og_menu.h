@@ -1,4 +1,4 @@
-/* PR 2: callbacks of the Open Gate setting (Off / 4K 3:2 / 5.7K 3:2) inside the custom firmware's sound page, which
+/* PR 2: callbacks of the Open Gate setting (Off / 4K 3:2 / 5.7K 3:2 / Reset in stills) inside the custom firmware's sound page, which
  * a7m4/open_gate.py takes over (layout.json "menu"). Calls only og.h. */
 #ifndef OG_MENU_H
 #define OG_MENU_H

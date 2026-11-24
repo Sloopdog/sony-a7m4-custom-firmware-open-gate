@@ -1,5 +1,7 @@
 # Sony A7 IV custom firmware with open gate
 
+> **Local offline fixes:** this working copy is based on `2b96e29`. It is not the published release, has not been installed or tested on a camera, and must not be treated as camera-validated. See [local changes](native/open-gate/LOCAL-FIXES.md).
+
 [Erlla's custom firmware v0.1.3](https://github.com/Erlla/sony-a7m4-custom-firmware) for the Sony A7 IV (ILCE-7M4),
 with **open gate** added: 4K 3:2 and 5.7K 3:2 video from the whole sensor, set from the camera's menu. The **custom
 LUTs** and every other v0.1.3 feature stay. The **custom shutter and focus sound menus** are removed: their page
@@ -95,7 +97,7 @@ ZM4 isn't part of this project and hasn't been tested with this build.
 
 1. Turn the Still/Movie/S&Q switch to **stills**. With it on movie, Mode shows "This function is currently disabled".
 2. Pick a mode and confirm. It applies at once, with no USB and no power cycle, and is saved in the camera.
-3. Turn the dial to movie and record. The mode stays on after a power-off or a battery pull until you set it to Off.
+3. After the menu reports a verified mode, turn the dial to movie. On every cold start, start in **stills** so the saved choice can be restored. Starting in movie leaves **Reset in stills** displayed; it does not apply the patch in movie mode.
 
 - Record in **XAVC HS 4K or XAVC S 4K at 24p** on NTSC cameras, or **XAVC S 4K at 25p** on PAL cameras, full frame.
   Other formats and frame rates don't work while a mode is on.
@@ -107,9 +109,9 @@ ZM4 isn't part of this project and hasn't been tested with this build.
 - 5.7K is coded with I and P pictures only, which removes the duplicate (held) frames. The camera plays 4K 3:2 files
   back, but not 5.7K.
 - The rear screen shows the whole 3:2 picture with focus frames. There's no de-squeeze preview.
-- **Off** puts every change back to stock straight away.
-- If a mode can't be applied (another apply running, the coprocessor not ready, unexpected bytes, a read or write
-  error), the menu shows no error: Mode keeps showing what is really in place.
+- **Off** restores runtime patch sites after the setting is saved successfully. It does not uninstall custom firmware or undo the larger on-disk raw buffer.
+- **Reset in stills** is a status, not another recording mode. It means the runtime state is unverified or an operation failed. Stop recording, power off, remove the battery for 10 seconds, then restart in stills.
+- Failed menu operations latch this status and stop further patch attempts in that process. There is no added recording-button lock or popup; the status must be checked before recording. If it persists after a cold restart, stop the test.
 
 ### Custom LUTs
 
@@ -178,10 +180,10 @@ inside the camera, so no USB session or cold boot is needed and the mode survive
 flowchart LR
   M["Menu: Mode = 4K 3:2"] --> C["og_menu_commit"] --> S["og_select"]
   P["shooting screen created (start-up, wake)"] --> O["og_power_on"]
-  S --> R["reconcile to the mode"]
+  S --> F["save /setting/open_gate.dat"]
+  F --> R["reconcile to the mode"]
   O --> R
   R --> W["check every site, undo, apply, read back"]
-  S --> F["save /setting/open_gate.dat"]
 ```
 
 **Where the changes go.** Nothing in Sony's image-processing files changes on disk. A native module, linked into an
@@ -204,20 +206,19 @@ module: four presets (4K and 5.7K, each for NTSC and PAL). Nothing is typed into
 
 **When it runs.** Two hooks on the shooting screen's creation (`0x1ddab68`, `0x1e56b2c`) call the custom firmware's
 aspect-ratio code first, unchanged, then `og_power_on`, which brings memory to the saved mode. Confirming the menu calls
-`og_select`, which does the same right away and then saves the mode. Both only act with the dial on stills, as the
-kit does; with the dial on movie the next shooting screen retries.
+`og_select`, which saves the request before changing live memory and restores the previous saved request if applying fails. Both retain the kit's movie-mode prohibition; merely recreating the screen in movie does not restore a missing patch.
 
 **How it stays safe.** Each apply first reads every site of the camera's NTSC/PAL family. Every site must hold either
 its stock bytes or one preset's bytes; anything else and nothing is written. Then it undoes the other preset, applies
-the chosen one in the kit's order and reads each write back. On any failure it puts every touched site back. Off puts
-every site back to stock. The camera's NTSC/PAL setting is detected from its stored records: exactly one of the two
+the chosen one in the kit's order and reads each write back. On failure it attempts to put every touched site back. A failed rollback is latched and shown as unverified; it never reports the old mode as still valid. Off restores
+the runtime sites, not the installed firmware. The camera's NTSC/PAL setting is detected from its stored records: exactly one of the two
 drive modes' records must hold the kit's bytes (on an NTSC camera, `0x880`'s record differs from the kit's PAL stock),
 and a camera that matches neither or both is left untouched.
 
 **The menu.** The setting is the custom firmware's own Custom Shutter Sound page, taken over: its page, controller and
 ids already work on the camera, so nothing new is registered. The page is renamed Open Gate and listed on Shooting >
-Media, holds only the Mode setting, and that setting gets a third option and callbacks into the module. Eight existing
-relocations change in place, so `.rela.dyn` keeps its size. The four texts are the page's own, rewritten in place in
+Media, holds only the Mode setting, and that setting uses four existing option aliases: three modes plus a non-applying reset status. Ten existing
+relocations change in place, so `.rela.dyn` keeps its size. Five custom sound texts are rewritten in place in
 all 68 string banks; no Sony string changes. An earlier version added a new item of its own; on the camera it had no
 title and couldn't be selected (its "selectable" answers were inverted), which is why this one reuses a working page.
 
