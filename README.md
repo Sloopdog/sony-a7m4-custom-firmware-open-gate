@@ -212,6 +212,9 @@ title and couldn't be selected (its "selectable" answers were inverted), which i
 
 Details: [the open-gate method](methods/11-open-gate/README.en.md) · [the module, records, hooks and relocations](native/open-gate/README.md).
 
+**Later work:** 1080p open gate (1920x1280) looks possible at 24/25/30p but isn't built; see the
+[research notes](methods/11-open-gate/HD-RESEARCH.md) for what it would take and the camera check that decides it.
+
 ## Build it yourself
 
 The build is reproducible: the same inputs give the same `BODYDATA.DAT`, byte for byte.
@@ -246,7 +249,7 @@ workspace defaults.
 
 | Path | What |
 | --- | --- |
-| [`methods/11-open-gate/`](methods/11-open-gate/README.en.md) | The open-gate method: modes, menu, build, limits |
+| [`methods/11-open-gate/`](methods/11-open-gate/README.en.md) | The open-gate method: modes, menu, build, limits; [research notes on 1080p open gate](methods/11-open-gate/HD-RESEARCH.md) for later work |
 | [`native/open-gate/`](native/open-gate/README.md) | The module's C and assembly, `layout.json` (every pinned input, address and hook) and `stored_record.json` |
 | `a7m4/open_gate.py`, `a7m4/open_gate_sites.py` | The build: site image, module link, `appFw.so` and string bank edits, packaging |
 | `tests/test_open_gate.py`, `tests/native/` | The offline checks |
