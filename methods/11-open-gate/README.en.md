@@ -87,16 +87,16 @@ not at the workspace defaults.
 
 ## Limits
 
-- Not yet run on a camera. The memory writes reproduce the kit's own methods and constants, which work on the
-  camera, but the module, its start-up trigger and its timing have only been tested offline.
-- The planned camera tests of this build are NTSC only. The PAL presets are the kit's PAL designs (`ogsq880_v1`,
-  `og57n880_v1`), which the kit ran on a camera set to PAL; this build has not been run on one.
+- Run on one camera, set to NTSC (2026-11-24, `v0.1.3-open-gate.4`): the family was detected as NTSC, 4K 3:2 and
+  5.7K 3:2 applied from the menu, were saved and re-checked at every shooting screen, and recorded files at 3840x2560
+  and 5760x3840.
+- The PAL presets are the kit's PAL designs (`ogsq880_v1`, `og57n880_v1`), which the kit ran on a camera set to PAL;
+  this build has not been run on one.
 - Applied with the dial on stills only, as the kit does; with the dial on movie the next shooting screen retries,
   and Mode says it is currently disabled.
-- This menu has not been run on a camera either (check C8). An earlier build listed a new item of its own directly on
-  Media; on the camera it showed no title and could not be selected, because its availability callbacks were inverted
-  and nothing in the custom firmware uses that shape. This build reuses the custom sound page instead, which works on
-  the camera, with the changes listed in the module README.
+- The menu works on the camera (check C8). An earlier build listed a new item of its own directly on Media; on the
+  camera it showed no title and could not be selected, and nothing in the custom firmware uses that shape. This build
+  reuses the custom sound page instead, with the changes listed in the module README.
 - The custom sound settings are gone from the menu, but a custom sound switched on with v0.1.3 stays on (its choice is
   saved in the camera). Switch both custom sounds off in v0.1.3 before installing this build.
 - While a mode is on, record only in the formats and frame rates the kit lists (XAVC HS 4K / XAVC S 4K at 24p NTSC,
