@@ -9,8 +9,13 @@ the kit's two states, NTSC and PAL:
 
 | Mode | File | Kit steps |
 | --- | --- | --- |
-| 4K 3:2 | 3840x2560, XAVC HS 4K / XAVC S 4K | `ogsq_v3` (PAL `ogsq880_v1`), `outsz2560_v1`, `ogfile2560_hs_s_v1`, `lcdfill_v2` |
-| 5.7K 3:2 | 5760x3840, XAVC HS 4K at 300 Mbps on the 100M settings | `og57n_v1` (PAL `og57n880_v1`), `og57cp_v3`, `ogfile57r300_v1`, `lcdfill_v2` |
+| 4K 3:2 | 3840x2560, XAVC HS 4K / XAVC S 4K | `ogsq_v3` (PAL `ogsq880_v1`), `outsz2560_v1`, `ogfile2560_hs_s_v2`, `lcdfill_v2` |
+| 5.7K 3:2 | 5760x3840, XAVC HS 4K / XAVC S 4K, 300 Mbps on the 100M settings, I and P pictures only | `og57n_v1` (PAL `og57n880_v1`), `og57cp_v3`, `ogfile57r300m1_v4`, `lcdfill_v2` |
+
+Both encoder steps also set the MP4 headers (track header, sample description, Sony's profile box) to the file's real
+size, so editors open it at 3:2 without a remux; Sony's XML in the file still says 3840x2160. Those are libmpr.so
+instructions and table entries, changed in memory like the rest. 5.7K is coded without B pictures, which removed the
+kit's duplicate frames, and an HEVC recording's edit list starts at frame 0.
 
 Step 1 (`dmmwb4688_v1`, the taller raw write buffer) is written into `nflasha8/DmmCfg.bin` at build time, so it is
 always on and the kit's cold-boot rule goes away. The C3 de-squeeze cycle is not included. Off puts every site back
@@ -56,7 +61,8 @@ unpacked v0.1.3 `0700_part_image/dev` tree) if they are not at the workspace def
   `og57n880_v1`), which the kit ran on a camera set to PAL; this build has not been run on one.
 - Applied with the dial on stills only, as the kit does; with the dial on movie the next shooting screen retries.
 - While a mode is on, record only in the formats and frame rates the kit lists (XAVC HS 4K / XAVC S 4K at 24p NTSC,
-  XAVC S 4K at 25p PAL; 5.7K: XAVC HS 4K). The menu still shows 100M for 5.7K: the card fills about three times faster.
+  XAVC S 4K at 25p PAL). The menu still shows 100M for 5.7K: the card fills about three times faster.
+- Set Proxy Recording to Off, as the kit asks. The camera does not play 5.7K files back.
 
 ## Credits and licenses
 

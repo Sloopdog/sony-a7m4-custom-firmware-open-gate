@@ -35,7 +35,7 @@ the aspect guide), then `og_power_on` with x0-x18 and NZCV preserved.
 
 ## Memory targets
 
-As in the kit's helpers (`libJit_level5_*`, `level16`, `level19_ogfile57r300_v1`, the `lcdcycle_v6` cave):
+As in the kit's helpers (`libJit_level5_*`, `level16`, `level19_ogfile57r300_v1` and `_m1_v4`, the `lcdcycle_v6` cave):
 
 - **CP**: `dlsym(0, ...)` of `_Z9dmm_allocjPj`, `_Z8dmm_freej`, `sen_dma_transfer`; a 4 KB DMM buffer mapped from
   `/dev/mem` with `O_SYNC`; `sen_dma_transfer(0, cp, phys, n)` reads, `(1, phys, cp, n)` writes, whole 64-byte lines.
@@ -46,7 +46,9 @@ As in the kit's helpers (`libJit_level5_*`, `level16`, `level19_ogfile57r300_v1`
   open-gate bytes; exactly one must.
 - **av-cam.bin**: `/dev/mem` (no `O_SYNC`) mapped at physical `0x401381000` (file `0x381000..0x3c0000`); each write is
   read back through the mapping and through `pread` of `/dev/mem`.
-- **libmpr.so**: `/proc/self/mem` at the start of its offset-0 mapping in `/proc/self/maps` plus the file offset.
+- **libmpr.so**: `/proc/self/mem` at the start of its offset-0 mapping in `/proc/self/maps` plus the file offset. Data and
+  code sites alike (the encoder steps change instructions there): arm64's `/proc/<pid>/mem` write syncs the
+  instruction cache of an executable mapping, which the kit's helpers rely on too.
 
 ## Reconcile
 
