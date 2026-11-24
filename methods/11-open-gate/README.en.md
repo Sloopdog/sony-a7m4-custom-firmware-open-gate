@@ -102,6 +102,11 @@ not at the workspace defaults.
   XAVC S 4K at 25p PAL). The menu still shows 100M for 5.7K: the card fills about three times faster.
 - Set Proxy Recording to Off, as the kit asks. The camera does not play 5.7K files back.
 
+## Later work
+
+- **1080p open gate (1920x1280):** offline research, what it would take and the camera check that decides it:
+  [HD-RESEARCH.md](HD-RESEARCH.md).
+
 ## Credits and licenses
 
 - Open-gate designs, methods and constants: [ArcaneLantern/a7iv-open-gate-test](https://github.com/ArcaneLantern/a7iv-open-gate-test), GPL-3.0.
