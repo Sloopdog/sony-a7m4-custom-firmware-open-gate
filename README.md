@@ -32,6 +32,7 @@ Erlla's original README: [English](README.en.md) · [中文](README.zh-CN.md)
 | The installable package | `BODYDATA.DAT` on the release [`v0.1.3-open-gate.1`](https://github.com/leogenot/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate.1), SHA-256 `b8c0326ae27e6b9f33d497c2a2b3dcd84ec09df3e54386bc0b5d8ad2c928b387` |
 | The same build, unbundled | [sony-a7m4-open-gate-firmware](https://github.com/leogenot/sony-a7m4-open-gate-firmware): the 70 changed files and a script that bundles them into v0.1.3's package |
 | The install tool | `M4_1.03_Windows_x64.zip` from Erlla's [v0.1.3 release](https://github.com/Erlla/sony-a7m4-custom-firmware/releases/tag/A7M4-ToolKit-v0.1.3) |
+| The install tool on a Mac | `ZM4-release-v1.0.3.dmg` from [Hippasu/A7m4-Z4M-firmware-for-mac](https://github.com/Hippasu/A7m4-Z4M-firmware-for-mac/releases/latest) (third party, Apple Silicon only) |
 
 Compared with v0.1.3, only two partitions change, plus their checksums: `nflasha15` (the camera's main program
 `appFw.so` and the 68 menu string banks) and `nflasha8` (`DmmCfg.bin`, 16 bytes). It is signed with the
@@ -54,9 +55,18 @@ you own the camera, and that you accept every risk, including losing the camera.
 - The camera must be an ILCE-7M4 on **official Sony firmware 6.02** and must boot normally. Erlla reports successful
   installs on mainland China, Hong Kong, Japan and Canada-market cameras; other regions aren't guaranteed.
 - Use an **original Sony battery**, charged enough for a firmware update, and keep the power stable.
-- You need a **Windows PC**: the M4 Camera Tool is Windows only.
+- You need a **Windows PC** for Erlla's M4 Camera Tool, or an **Apple Silicon Mac** for ZM4 (see below).
 - If the camera runs v0.1.3 and you switched on a **custom shutter or focus sound**, switch it off **before**
   installing. The choice is saved in the camera, and this build has no menu to turn it off.
+
+**On a Mac (Apple Silicon only):** [ZM4](https://github.com/Hippasu/A7m4-Z4M-firmware-for-mac), a third-party macOS
+port of Erlla's tool, does the same updater patch. Download `ZM4-release-v1.0.3.dmg` from its
+[latest release](https://github.com/Hippasu/A7m4-Z4M-firmware-for-mac/releases/latest), drag ZM4 to Applications and follow
+its steps instead of steps 2 and 3 below; the update on the camera (step 4) is the same. Its release also ships a
+`BODYDATA.DAT`: that one is Erlla's v0.1.3 itself (SHA-256 `cfb79295…`), without open gate, so put **this build's**
+`BODYDATA.DAT` on the card. If macOS
+says the app is damaged, see the quarantine fix in [its README](https://github.com/Hippasu/A7m4-Z4M-firmware-for-mac#mac常见问题).
+ZM4 isn't part of this project and hasn't been tested with this build.
 
 **Steps**
 1. Copy `BODYDATA.DAT` to the **root of the card in slot 1**, not in a folder, and put the card in the camera.
