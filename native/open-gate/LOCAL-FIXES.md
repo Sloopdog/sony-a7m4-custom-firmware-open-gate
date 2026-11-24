@@ -4,6 +4,12 @@ Based on `2b96e29b78954945459faeca17b99bc69315afce`; firmware implementation com
 Installed on one ILCE-7M4, with two short NTSC 5.7K recordings verified. Hardware fault cases and broader operating
 conditions remain untested. See the [dated validation scope](../../docs/releases/state-fixes-1.md).
 
+Current development source also integrates Arcane Lantern `lcdcycle_v7`: raw C3 presses in movie mode cycle the rear
+LCD through 3:2, 2:1, 2.25:1 and 2.4:1 while keeping focus frames. The original cave overlaps v0.1.3, so the pinned blob
+is instruction-relocated to the tail of this module's RX segment and its stock C3 hook is redirected there. Tests pin
+the design, source and relocated hashes, the displaced instruction, return target, hook and final module bytes. This
+addition is offline-tested only and is outside the installed `state-fixes.1` validation scope.
+
 ## Behavior
 
 - The saved request and verified live mode are separate. A new process starts unverified. Starting in movie does not apply patches or falsely report the saved mode as active. Start in stills, then check the mode before recording.
@@ -20,7 +26,10 @@ Off restores runtime patch sites only. The custom firmware, hooks, and larger on
 
 `tests/test_open_gate.py` covers mode transitions in NTSC/PAL, movie startup, unavailable startup memory, successful and failed rollback, settings-open failures, sync failures before and after rename, failed settings rollback, error-state persistence across callbacks, and cold-process recovery. The native host programs use AddressSanitizer and UndefinedBehaviorSanitizer.
 
-With the exact Erlla v0.1.3 inputs and pinned Zig available, the same suite also cross-compiles the AArch64 module, checks the composed ELF, option/parent maps and relocation changes, and verifies all 68 string banks preserve Sony's original strings. Menu records occupy initialized RW padding at `0x907fc00`, outside the zero-initialized runtime state; composition checks that they do not overlap.
+With the exact Erlla v0.1.3 inputs and pinned Zig available, the same suite also cross-compiles the AArch64 module,
+relocates and pins the C3 cycle, checks the composed ELF, option/parent maps and relocation changes, and verifies all
+68 string banks preserve Sony's original strings. Menu records occupy initialized RW padding at `0x907fc00`, outside
+the zero-initialized runtime state; composition checks that they do not overlap.
 
 To run, provide `OG_DESIGNS`, `OG_V013_DEV`, `OG_602_DEV`, and `OG_ZIG`, then run:
 

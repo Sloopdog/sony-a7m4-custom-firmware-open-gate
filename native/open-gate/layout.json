@@ -23,7 +23,8 @@
   "og57cp_v3": "b0f521921fa7c21d18e6779d8d5a892f4d8d1b3acce84b5272eb008e39e16693",
   "ogfile2560_hs_s_v2": "728bbc2e7899c4848868dfea3373de53d115d7e13226bbea1b578fe71f74263c",
   "ogfile57r300m1_v4": "a73b8b69b68481f7065be1f3c83d8a827dd28fb2606926506615de77ff0adfad",
-  "lcdfill_v2": "01e08e55727d793ed94c9bc5e052a68442668b63d531df3f0902cbb5d505aaac"
+  "lcdfill_v2": "01e08e55727d793ed94c9bc5e052a68442668b63d531df3f0902cbb5d505aaac",
+  "lcdcycle_v7": "c418cb1c449cf9291d93b2d8fae667bff6648f79b833599d8c29290ec674e840"
  },
  "compiler": {
   "name": "Zig 0.15.2 aarch64-macos (ziglang.org official build; tarball SHA-256 from download/index.json, minisign signature verified with the Zig release key)",
@@ -46,9 +47,11 @@
   "og_menu.h": "15756a424316960ab992b8a1634b180e4b7c51654b2eccb2b156e88264640665"
  },
  "module": {
-  "text_bytes": 46572,
-  "text_sha256": "0056c3258b6d3b35e94590eea02d5fd22a2d9f958e10eec93130b4dbb5ab364e",
-  "what": "the linked .text (code, strings, site image) for these sources, designs and compiler"
+  "what": "the linked Open Gate .text plus the relocated pinned Arcane Lantern lcdcycle_v7 blob and reserved zero padding",
+  "base_text_bytes": 46572,
+  "base_text_sha256": "0056c3258b6d3b35e94590eea02d5fd22a2d9f958e10eec93130b4dbb5ab364e",
+  "text_bytes": 49152,
+  "text_sha256": "18a8e2c0c0d25d12a7314055d3a537167ff3af52e51a863e0fe5ab132d220be1"
  },
  "appfw": {
   "input_bytes": 99221508,
@@ -354,6 +357,25 @@
      1593
     ]
    }
+  ]
+ },
+ "c3_desqueeze": {
+  "what": "Arcane Lantern lcdcycle_v7 relocated into the Open Gate RX segment: raw C3 cycles rear LCD 3:2, 2:1, 2.25:1 and 2.4:1 in movie mode while preserving focus frames.",
+  "design": "lcdcycle_v7.json",
+  "design_sha256": "c418cb1c449cf9291d93b2d8fae667bff6648f79b833599d8c29290ec674e840",
+  "source_va": "0x50bba60",
+  "code_bytes": "0x470",
+  "blob_bytes": 1440,
+  "blob_sha256": "65c7a1209788b01fd8d0d90d6fe6dc89212146480e8b2d262335603093c8f7d4",
+  "relocated_sha256": "c4fb7f7fb06e7e334f788b1b44f6960aa709c5c4468acf9d80223e52556beea7",
+  "hook_va": "0x1f06594",
+  "hook_old": "ff0312d1",
+  "hook_continuation": "0x1f06598",
+  "states": [
+   "3:2",
+   "2:1",
+   "2.25:1",
+   "2.4:1"
   ]
  }
 }

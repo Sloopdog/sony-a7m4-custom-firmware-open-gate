@@ -18,7 +18,7 @@ import pytest
 
 from a7m4.common import ToolError
 from a7m4.open_gate import (Module, _config_header, _edit_bank, _edit_banks, _linker_script, _uxc_records, _uxc_texts,
-                            build, compile_module, compose_ap)
+                            _relocate_c3, attach_c3, build, compile_module, compose_ap)
 from a7m4.open_gate_sites import (_CP_IMAGE_VA, _NATIVE, PRESETS, _ROOT, STEP1, _STORED_RECORD, Family, Mode, Run, SiteImage,
                                   Space, check_stock, compile_image, dmmcfg_edits, _layout, load_design, runs_of)
 
@@ -215,6 +215,25 @@ def test_compose_ap_refuses_another_appfw():
     module = Module(b"\0" * 16, 0x9063000, 0x907f000, 0, {})
     with pytest.raises(ToolError, match="v0.1.3"):
         compose_ap(b"\x7fELF" + bytes(64), module, _layout())
+
+
+@needs_designs
+def test_c3_design_relocates_into_the_reserved_rx_tail():
+    lay = _layout()
+    design = json.loads((DESIGNS / lay["c3_desqueeze"]["design"]).read_text())
+    source = b"".join(bytes.fromhex(p["new"]) for p in design["patches"] if p["kind"] == "cave")
+    old = int(lay["c3_desqueeze"]["source_va"], 16)
+    new = int(lay["appfw"]["rx"]["va"], 16) + int(lay["appfw"]["rx"]["max_bytes"], 16) - len(source)
+    result = _relocate_c3(source, old, new, int(lay["c3_desqueeze"]["code_bytes"], 16))
+    assert len(result) == 1440 and hashlib.sha256(result).hexdigest() == lay["c3_desqueeze"]["relocated_sha256"]
+    assert new & 0xfff == old & 0xfff and new + len(result) == 0x906f000
+    # The relocated stub still performs the displaced stack instruction and returns to the following stock instruction.
+    assert result[0x48:0x4c] == bytes.fromhex("ff0312d1")
+    word = struct.unpack_from("<I", result, 0x4c)[0]
+    immediate = word & 0x3ffffff
+    if immediate & 0x02000000:
+        immediate -= 1 << 26
+    assert new + 0x4c + (immediate << 2) == 0x1f06598
 
 
 # --- og_reconcile.c and og.c on the host, against a fake og_mem seeded with v0.1.3's files --------------------------
@@ -701,7 +720,7 @@ def test_v013_sound_page_is_a_complete_custom_item(v013):
 def composed(image, v013, tmp_path_factory):
     if not ZIG.is_file():
         pytest.skip("pinned Zig not available")
-    module = compile_module(ZIG, image, tmp_path_factory.mktemp("og_module") / "module")
+    module = attach_c3(compile_module(ZIG, image, tmp_path_factory.mktemp("og_module") / "module"), DESIGNS, _layout())
     return module, Image(compose_ap(v013.data, module, _layout()))
 
 
@@ -723,6 +742,7 @@ def test_composed_appfw_changes_only_the_listed_places(composed, v013):
     module, out = composed
     differ = np.flatnonzero(np.frombuffer(v013.data, np.uint8) != np.frombuffer(out.data, np.uint8))
     hooks = [v013.offset(int(h["va"], 16)) for h in _layout()["hooks"]]
+    hooks.append(v013.offset(int(_layout()["c3_desqueeze"]["hook_va"], 16)))
     allowed = [(0x38, 0x3a), (0x5e73000, 0x5e73000 + len(module.text)), (0x5e80000, 0x5e80000 + 17 * 56)]
     allowed += [(at, at + 4) for at in hooks] + [(at, at + n) for at, n in takeover_places(v013)]
     assert all(any(lo <= int(i) < hi for lo, hi in allowed) for i in differ)
@@ -730,6 +750,19 @@ def test_composed_appfw_changes_only_the_listed_places(composed, v013):
     assert len(out.rela) == len(v013.rela)
     tags = lambda img: {t["d_tag"]: t["d_val"] for t in img.elf.get_section_by_name(".dynamic").iter_tags()}
     assert tags(out) == tags(v013)
+
+
+def test_composed_appfw_installs_the_relocated_c3_cycle(composed):
+    module, out = composed
+    lay = _layout()
+    c3 = lay["c3_desqueeze"]
+    hook = int(c3["hook_va"], 16)
+    assert module.c3_va == 0x906ea60
+    assert module.c3_va + c3["blob_bytes"] == int(lay["appfw"]["rx"]["va"], 16) + int(
+        lay["appfw"]["rx"]["max_bytes"], 16)
+    assert out.branch(hook) == ("b", module.c3_va)
+    assert hashlib.sha256(out.bytes(module.c3_va, c3["blob_bytes"])).hexdigest() == c3[
+        "relocated_sha256"]
 
 
 def test_composed_media_lists_the_open_gate_page_and_shutter_silent_loses_both_sound_pages(composed, v013):

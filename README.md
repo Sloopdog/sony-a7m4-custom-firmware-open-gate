@@ -6,6 +6,10 @@ The build was installed on one ILCE-7M4 and two short NTSC 5.7K recordings were 
 See [changes](native/open-gate/LOCAL-FIXES.md), [test scope](docs/releases/state-fixes-1.md) and
 [quick start, anamorphic preview and LUT import](docs/OPEN-GATE-QUICKSTART.md).
 
+Development after the tagged package adds Arcane Lantern's C3 rear-screen de-squeeze cycle. That development package
+has only been built and checked offline; it has not been installed on a camera. The published
+`v0.1.3-open-gate-state-fixes.1` package remains the camera-tested build and does not contain C3 de-squeeze.
+
 [Erlla's custom firmware v0.1.3](https://github.com/Erlla/sony-a7m4-custom-firmware) for the Sony A7 IV (ILCE-7M4),
 with **open gate** added: 4K 3:2 and 5.7K 3:2 video from the whole sensor, set from the camera's menu. The **custom
 LUTs** and every other v0.1.3 feature stay. The **custom shutter and focus sound menus** are removed: their page
@@ -36,7 +40,7 @@ Erlla's original README: [English](README.en.md) · [中文](README.zh-CN.md)
 
 | What | Where |
 | --- | --- |
-| This fork's experimental package | [`v0.1.3-open-gate-state-fixes.1`](https://github.com/Sloopdog/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate-state-fixes.1): `BODYDATA.DAT`, `SHA256SUMS` and `VALIDATION.json` |
+| Camera-tested experimental package | [`v0.1.3-open-gate-state-fixes.1`](https://github.com/Sloopdog/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate-state-fixes.1): `BODYDATA.DAT`, `SHA256SUMS` and `VALIDATION.json`; it does not include C3 de-squeeze |
 | Package SHA-256 | `6b303b050e12d0bb19af3a406ee6820ce90c0be5f2f3307249d42da0ce44c536` (757,480,856 bytes) |
 | Source and test scope | [Release documentation](docs/releases/state-fixes-1.md); the release tag includes the firmware implementation and subsequent documentation/host-helper changes |
 | Original upstream release | [leogenot's v0.1.3-open-gate-1.0](https://github.com/leogenot/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate-1.0), without this fork's state-handling changes |
@@ -118,8 +122,11 @@ backup is not a complete device recovery image.
   Sony's own XML inside the file still says 3840x2160.
 - 5.7K is coded with I and P pictures only, which removes the duplicate (held) frames. The camera plays 4K 3:2 files
   back, but not 5.7K.
-- The rear screen shows the 3:2 picture with focus frames. **The temporary kit's C3 anamorphic de-squeeze cycle is not
-  included.** Use an external monitor's matching squeeze ratio for preview; see the [quick start](docs/OPEN-GATE-QUICKSTART.md).
+- The tagged camera-tested package shows the 3:2 picture with focus frames and has no C3 de-squeeze. Current development
+  source adds the temporary kit's C3 rear-screen cycle: **3:2 → 2:1 (1.33×) → 2.25:1 (1.5×) → 2.4:1 (1.6×) → 3:2**.
+  It responds to raw C3 presses only in movie mode, preserves focus frames and does not alter the saved file. This
+  development integration is offline-tested only; HDMI output and camera behavior remain unverified. See the
+  [quick start](docs/OPEN-GATE-QUICKSTART.md).
 - **Off** restores runtime patch sites after the setting is saved successfully. It does not uninstall custom firmware or undo the larger on-disk raw buffer.
 - **Reset in stills** is a status, not another recording mode. It means the runtime state is unverified or an operation failed. Stop recording, power off, remove the battery for 10 seconds, then restart in stills.
 - Failed menu operations latch this status and stop further patch attempts in that process. There is no added recording-button lock or popup; the status must be checked before recording. If it persists after a cold restart, stop the test.

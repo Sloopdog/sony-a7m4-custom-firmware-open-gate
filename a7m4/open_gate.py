@@ -51,6 +51,7 @@ class Module:
     state_va: int
     state_bytes: int
     symbols: Mapping[str, int]
+    c3_va: int | None = None
 
 
 def _int(value: str | int) -> int:
@@ -156,7 +157,7 @@ def compile_module(zig: Path, image: SiteImage, workdir: Path) -> Module:
                and s["st_shndx"] not in ("SHN_UNDEF",)}
     code = text.data()
     pin = lay["module"]
-    require(len(code) == pin["text_bytes"] and digest(code) == pin["text_sha256"], "OG_LINK",
+    require(len(code) == pin["base_text_bytes"] and digest(code) == pin["base_text_sha256"], "OG_LINK",
             f"Linked module {digest(code)} is not the pinned build")
     at = symbols["og_sites"] - rx
     require(code[at:at + len(blob)] == blob, "OG_LINK", "Linked site image differs from og_sites.bin")
@@ -171,6 +172,90 @@ def _branch(pc: int, target: int, link: bool) -> bytes:
     delta = target - pc
     require(delta % 4 == 0 and -(1 << 27) <= delta < 1 << 27, "OG_HOOK", "Branch target out of range")
     return struct.pack("<I", (0x94000000 if link else 0x14000000) | ((delta >> 2) & 0x3ffffff))
+
+
+def _signed(value: int, bits: int) -> int:
+    return value - (1 << bits) if value & (1 << (bits - 1)) else value
+
+
+def _field(value: int, bits: int, what: str) -> int:
+    require(-(1 << (bits - 1)) <= value < (1 << (bits - 1)), "OG_C3", f"{what} is out of range")
+    return value & ((1 << bits) - 1)
+
+
+def _relocate_c3(blob: bytes, old_va: int, new_va: int, code_bytes: int) -> bytes:
+    """Relocate Arcane Lantern lcdcycle_v7's position-dependent AArch64 instructions.
+
+    The compact implementation has code followed by strings and tables. Internal branches/addresses move with the
+    blob; calls outside it retain their original targets. The destination deliberately keeps the source page offset,
+    so ADRP+ADD pairs that address the trailing data keep their ADD immediates.
+    """
+    require(len(blob) % 4 == 0 and code_bytes % 4 == 0 and code_bytes <= len(blob), "OG_C3", "Bad C3 blob bounds")
+    require(((old_va ^ new_va) & 0xfff) == 0, "OG_C3", "C3 destination must preserve the source page offset")
+    out = bytearray(blob)
+
+    def moved(target: int) -> int:
+        old_page = old_va & ~0xfff
+        if (target & ~0xfff) == old_page:
+            return (new_va & ~0xfff) + target - old_page
+        return new_va + target - old_va if old_va <= target < old_va + len(blob) else target
+
+    for offset in range(0, code_bytes, 4):
+        pc, new_pc = old_va + offset, new_va + offset
+        word = struct.unpack_from("<I", out, offset)[0]
+        updated = word
+        if word >> 26 in (0b000101, 0b100101):                         # B / BL
+            target = pc + (_signed(word & 0x3ffffff, 26) << 2)
+            updated = (word & 0xfc000000) | _field((moved(target) - new_pc) >> 2, 26, "B/BL")
+        elif word & 0xff000010 == 0x54000000:                           # B.cond
+            target = pc + (_signed((word >> 5) & 0x7ffff, 19) << 2)
+            updated = (word & ~(0x7ffff << 5)) | (_field((moved(target) - new_pc) >> 2, 19, "B.cond") << 5)
+        elif word & 0x7e000000 == 0x34000000:                           # CBZ / CBNZ
+            target = pc + (_signed((word >> 5) & 0x7ffff, 19) << 2)
+            updated = (word & ~(0x7ffff << 5)) | (_field((moved(target) - new_pc) >> 2, 19, "CBZ/CBNZ") << 5)
+        elif word & 0x7e000000 == 0x36000000:                           # TBZ / TBNZ
+            target = pc + (_signed((word >> 5) & 0x3fff, 14) << 2)
+            updated = (word & ~(0x3fff << 5)) | (_field((moved(target) - new_pc) >> 2, 14, "TBZ/TBNZ") << 5)
+        elif word & 0x9f000000 in (0x10000000, 0x90000000):             # ADR / ADRP
+            page = bool(word & 0x80000000)
+            immediate = _signed(((word >> 29) & 3) | (((word >> 5) & 0x7ffff) << 2), 21)
+            target = ((pc & ~0xfff) + (immediate << 12)) if page else pc + immediate
+            delta = (((moved(target) & ~0xfff) - (new_pc & ~0xfff)) >> 12) if page else moved(target) - new_pc
+            immediate = _field(delta, 21, "ADRP" if page else "ADR")
+            updated = (word & ~((3 << 29) | (0x7ffff << 5))) | ((immediate & 3) << 29) | ((immediate >> 2) << 5)
+        struct.pack_into("<I", out, offset, updated)
+    return bytes(out)
+
+
+def attach_c3(module: Module, designs: Path, layout: dict) -> Module:
+    """Append the pinned Arcane Lantern C3 preview cycle to the reserved Open Gate RX segment."""
+    c3 = layout["c3_desqueeze"]
+    path = Path(designs) / c3["design"]
+    require(sha256(path) == c3["design_sha256"], "OG_C3", "lcdcycle_v7 design identity")
+    design = json.loads(path.read_text("utf-8"))
+    patches = design.get("patches", [])
+    cave = [p for p in patches if p.get("kind") == "cave"]
+    hooks = [p for p in patches if p.get("kind") == "hook"]
+    require(design.get("design") == "lcdcycle_v7" and len(cave) == 90 and len(hooks) == 1, "OG_C3", "Design shape")
+    old_va = _int(c3["source_va"])
+    for index, patch in enumerate(cave):
+        require(patch.get("binary") == "appFw.so" and _int(patch["va"]) == old_va + 16 * index
+                and _int(patch["file_off"]) == old_va + 16 * index and bytes.fromhex(patch["old"]) == bytes(16),
+                "OG_C3", f"Unexpected cave row {index}")
+    hook = hooks[0]
+    require(hook.get("binary") == "appFw.so" and _int(hook["va"]) == _int(c3["hook_va"])
+            and hook["old"] == c3["hook_old"], "OG_C3", "Unexpected C3 hook")
+    source = b"".join(bytes.fromhex(p["new"]) for p in cave)
+    require(len(source) == c3["blob_bytes"] and digest(source) == c3["blob_sha256"], "OG_C3", "C3 source blob")
+    destination = module.text_va + _int(layout["appfw"]["rx"]["max_bytes"]) - len(source)
+    relocated = _relocate_c3(source, old_va, destination, _int(c3["code_bytes"]))
+    require(digest(relocated) == c3["relocated_sha256"], "OG_C3", "Relocated C3 blob identity")
+    gap = destination - (module.text_va + len(module.text))
+    require(gap >= 0, "OG_C3", "C3 overlaps the Open Gate module")
+    text = module.text + bytes(gap) + relocated
+    pin = layout["module"]
+    require(len(text) == pin["text_bytes"] and digest(text) == pin["text_sha256"], "OG_C3", "Combined module identity")
+    return Module(text, module.text_va, module.state_va, module.state_bytes, module.symbols, destination)
 
 
 def _file_offset(loads, va: int, size: int) -> int:
@@ -314,6 +399,7 @@ def compose_ap(appfw: bytes, module: Module, layout: dict) -> bytes:
     ap = layout["appfw"]
     require(digest(appfw) == layout["inputs"]["nflasha15:lib/appFw.so"] and len(appfw) == ap["input_bytes"],
             "OG_BASELINE", "appFw.so is not v0.1.3's")
+    require(module.c3_va is not None, "OG_C3", "C3 de-squeeze cycle is not attached")
     elf = ELFFile(io.BytesIO(appfw))
     phoff, phnum, phsize = elf["e_phoff"], elf["e_phnum"], elf["e_phentsize"]
     table = ap["program_headers"]
@@ -357,6 +443,11 @@ def compose_ap(appfw: bytes, module: Module, layout: dict) -> bytes:
         require(bytes(out[at:at + 4]) == _branch(va, _int(hook["previous_target"]), link), "OG_HOOK",
                 f"{va:#x} does not hold the expected {hook['kind'].upper()}")
         out[at:at + 4] = _branch(va, module.symbols[hook["entry"]], link)
+    c3 = layout["c3_desqueeze"]
+    c3_va = _int(c3["hook_va"])
+    c3_at = _file_offset(loads, c3_va, 4)
+    require(bytes(out[c3_at:c3_at + 4]) == bytes.fromhex(c3["hook_old"]), "OG_C3", "C3 hook is not stock")
+    out[c3_at:c3_at + 4] = _branch(c3_va, module.c3_va, False)
     _take_over_sound_page(out, appfw, elf, loads, module.symbols, layout)
     result = bytes(out)
     require(len(result) == len(appfw), "OG_SIZE", "appFw.so changed size")
@@ -522,7 +613,7 @@ def build(args: argparse.Namespace) -> dict:
         edits = dmmcfg_edits(Path(args.designs))
         apply_file_edits(fat8, edits)
         write(_CP8, p8, fat8.bytes())
-        module = compile_module(Path(args.zig), image, work / "module")
+        module = attach_c3(compile_module(Path(args.zig), image, work / "module"), Path(args.designs), lay)
         ap = compose_ap(appfw, module, lay)
         banks = _edit_banks(lambda path: ext.get(path).open().read(), lay["menu"]["strings"])
         p15_new = ext_replace(p15, "lib/appFw.so", ap, lay["inputs"]["nflasha15:lib/appFw.so"])

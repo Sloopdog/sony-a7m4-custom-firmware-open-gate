@@ -22,8 +22,10 @@ instructions and table entries, changed in memory like the rest. 5.7K is coded w
 kit's duplicate frames, and an HEVC recording's edit list starts at frame 0.
 
 Step 1 (`dmmwb4688_v1`, the taller raw write buffer) is written into `nflasha8/DmmCfg.bin` at build time, so it is
-always on. The C3 de-squeeze cycle is not included. Off restores runtime sites after its setting is saved; the
-larger on-disk buffer and custom firmware remain installed. Cold-reset recovery after a fault still applies.
+always on. Current development source also relocates the pinned `lcdcycle_v7` blob into the Open Gate RX segment;
+raw C3 presses in movie mode cycle the rear LCD through 3:2, 2:1, 2.25:1 and 2.4:1 without changing the file or HDMI
+output. The published `state-fixes.1` package predates this addition. Off restores runtime sites after its setting is
+saved; the larger on-disk buffer, C3 hook and custom firmware remain installed. Cold-reset recovery after a fault still applies.
 The camera's NTSC/PAL setting is detected on the camera from its stored drive-parameter
 record; a camera matching neither is left untouched.
 

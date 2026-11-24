@@ -26,10 +26,16 @@ it does not uninstall the custom firmware or the larger stored raw buffer.
 
 ## Anamorphic preview and C3
 
-**This firmware does not include the temporary Arcane Lantern kit's C3 de-squeeze cycle.** Assigning C3 cannot enable
-that missing feature. Use your external monitor's anamorphic/de-squeeze setting at the factor specified by the lens
-(for example, 1.33×, 1.5×, 1.8× or 2× if supported by the monitor), then apply that lens factor in post-production.
-This is preview configuration; it does not change the recorded file's 3:2 pixel dimensions.
+The published `v0.1.3-open-gate-state-fixes.1` package has no C3 de-squeeze. Current development source adds the exact
+Arcane Lantern C3 rear-screen cycle, relocated into this fork's reserved executable segment. In movie mode, each raw
+C3 press cycles **3:2 → 2:1 (1.33×) → 2.25:1 (1.5×) → 2.4:1 (1.6×) → 3:2**. Focus frames remain enabled. The hook
+handles the physical C3 press in movie mode regardless of the normal function assigned to C3, so that assigned action
+may not run while the cycle is active.
+
+The C3 cycle changes only the rear-screen preview. It does not alter the recorded file or the HDMI output. Use the
+external monitor's anamorphic/de-squeeze setting at the factor specified by the lens and apply the same factor in post.
+The development integration has passed offline relocation, composition and package checks but has not been installed
+or tested on a camera.
 
 The exact monitor controls depend on its model. HDMI coverage of the top and bottom of an open-gate recording was
 not compared in this fork's test. Check with objects near both frame edges before relying on the HDMI framing.
