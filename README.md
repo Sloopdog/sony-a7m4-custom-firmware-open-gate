@@ -29,7 +29,7 @@ Erlla's original README: [English](README.en.md) · [中文](README.zh-CN.md)
 
 | What | Where |
 | --- | --- |
-| The installable package | `BODYDATA.DAT` on the release [`v0.1.3-open-gate.1`](https://github.com/leogenot/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate.1), SHA-256 `b8c0326ae27e6b9f33d497c2a2b3dcd84ec09df3e54386bc0b5d8ad2c928b387` |
+| The installable package | `BODYDATA.DAT` on the release [`v0.1.3-open-gate.2`](https://github.com/leogenot/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate.2), SHA-256 `915832f4282a9ea6ab2cf5e411029a5c377dc0e6f924b9b1c11851b29801c2d6` |
 | The same build, unbundled | [sony-a7m4-open-gate-firmware](https://github.com/leogenot/sony-a7m4-open-gate-firmware): the 70 changed files and a script that bundles them into v0.1.3's package |
 | The install tool | `M4_1.03_Windows_x64.zip` from Erlla's [v0.1.3 release](https://github.com/Erlla/sony-a7m4-custom-firmware/releases/tag/A7M4-ToolKit-v0.1.3) |
 | The install tool on a Mac | `ZM4-release-v1.0.3.dmg` from [Hippasu/A7m4-Z4M-firmware-for-mac](https://github.com/Hippasu/A7m4-Z4M-firmware-for-mac/releases/latest) (third party, Apple Silicon only) |
