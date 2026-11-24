@@ -24,41 +24,33 @@ record; a camera matching neither is left untouched.
 
 ## Menu item
 
-"Open Gate", with three options: **Off**, **4K 3:2** and **5.7K 3:2**.
+**MENU > Shooting > Media > Open Gate > Mode**, with three options: **Off**, **4K 3:2** and **5.7K 3:2**.
 
-- **Where:** MENU > Shooting > Media, after Display Media Info. It is not next to File Format: Image Quality/Rec
-  already holds all 30 of its fixed slots (the menu tree is fixed arrays of 30 entries per group), and Media is the
-  group right after it. The item is appended there the way the custom firmware's LUT and custom-sound items are
-  appended to theirs; no native item moves.
+- **What it is:** the custom firmware's Custom Shutter Sound page, taken over. Its page, controller and ids are the
+  custom firmware's own and already work on the camera, so the setting behaves like the custom sound settings did. The
+  page is renamed Open Gate, listed on Media after Display Media Info., and holds only the Mode setting. Both custom
+  sound pages leave Shooting > Shutter/Silent; the custom sound code is still in the firmware, but no menu reaches it.
 - **Applies on confirm**, through the same reconcile as at start: every site is checked, the chosen preset is
   written and read back, and Off puts every site back to stock without a power cycle. The choice is saved in
   `/setting/open_gate.dat` and re-applied at the next shooting screen.
-- **Stills only:** the item is greyed while the dial is on movie.
+- **Stills only:** Mode is greyed while the dial is on movie. Choose the mode on stills, then turn the dial and record.
 - **On failure** (another apply running, coprocessor not ready, foreign bytes, an I/O error, or the record could not
   be saved) nothing is shown: the native apply method ignores the commit's result (`appFw.so` 0x1c15620), so there
-  is no error path to use. The item keeps showing the mode that is really in place (`og_selected()`). If the bytes
-  were applied but the record could not be saved, the item shows the new mode, and the next power-on goes back to
-  the saved one.
+  is no error path to use. Mode keeps showing what is really in place (`og_selected()`). If the bytes were applied
+  but the record could not be saved, Mode shows the new mode, and the next power-on goes back to the saved one.
 
-The labels are in all 68 horizontal and vertical string banks, in English in every language (Off is Sony's own,
-translated, string). The banks cannot grow, so four of the custom firmware's own custom-sound texts were shortened
-to make room (three in the Chinese banks):
+The texts are the sound page's own, rewritten in place in all 68 horizontal and vertical string banks, in English in
+every language (Off is Sony's own, translated, string):
 
-| Id | Before | After |
+| Id | Was | Now |
 | --- | --- | --- |
-| `0x0200ab61` | Use this audio for electronic shutter? | Use as shutter sound? |
-| `0x0200ab62` | Use this audio for focus? | Use as focus sound? |
-| `0x0200ab63` | Restore default focus sound? | Reset focus sound? |
-| `0x0200ab5e` | Import from SD | Import |
-| `0x0200ab61` (Simplified Chinese) | 是否将此音频用于电子快门声？ | 用作快门声？ |
-| `0x0200ab62` (Simplified Chinese) | 是否将此音频用于对焦声音？ | 用作对焦声音？ |
-| `0x0200ab63` (Simplified Chinese) | 是否恢复默认对焦声音？ | 恢复默认对焦声音？ |
-| `0x0200ab61` (Traditional Chinese) | 是否將此音訊用於電子快門聲？ | 用作快門聲？ |
-| `0x0200ab62` (Traditional Chinese) | 是否將此音訊用於對焦聲音？ | 用作對焦聲音？ |
-| `0x0200ab63` (Traditional Chinese) | 是否恢復預設對焦聲音？ | 恢復預設對焦聲音？ |
+| `0x0200ab5c` | Custom Shutter Sound | Open Gate |
+| `0x0200ab5f` | On/Off | Mode |
+| `0x0200ab61` | Use this audio for electronic shutter? | 4K 3:2 |
+| `0x0200ab62` | Use this audio for focus? | 5.7K 3:2 |
 
-The shutter sound is shared by every shutter type in this firmware, so "shutter sound" is still exact. No Sony string
-changes. The module's [README](../../native/open-gate/README.md) has the registries, hooks and record layouts.
+No Sony string changes. The module's [README](../../native/open-gate/README.md) has the records, hooks and
+relocations.
 
 ## Build
 
@@ -81,14 +73,14 @@ python -m a7m4.open_gate build --base BODYDATA-custom-v0.1.3.DAT \
 The output directory must not exist. It gets `BODYDATA.DAT`, `verification.json` (every input and output hash, the
 changed members and byte ranges, the module's symbols, the signature check and the package audit) and `work/`.
 Only `nflasha8` (`DmmCfg.bin`, 16 bytes), `nflasha15` (`appFw.so`: the module in its zero gap, two program headers,
-nine hook instructions, the Media group's count and new entry, one relocation after `.rela.dyn` and the two fields
-that size it; and the 68 string banks, same sizes) and `part_image.sum` change. `av-cam.bin`, `libmpr.so`
+three hook instructions, the Media and Shutter/Silent groups, the sound page's records and nine of its relocations,
+changed in place; and the 68 string banks, same sizes) and `part_image.sum` change. `av-cam.bin`, `libmpr.so`
 and `cpapp-b.bin` stay byte-identical: their open-gate changes are made in memory at run time.
 
 Offline checks: `python -m pytest tests/test_open_gate.py`: the site image against the designs and v0.1.3's files;
 `og_reconcile.c` and `og.c` on the host against fake memory, and `og_mem.c` against fake DMA, `/dev/mem` and
-`/proc/self/maps`; `og_menu.c` against a fake `og.h` and native maps, with its records compared to v0.1.3's; the
-composed `appFw.so` (linked with the pinned Zig) and all 68 edited banks, decoded. Set `OG_DESIGNS`, `OG_V013_DEV`
+`/proc/self/maps`; `og_menu.c` against a fake `og.h` and dial; the sound page's records in v0.1.3; the composed `appFw.so` (linked with
+the pinned Zig) and all 68 edited banks, decoded. Set `OG_DESIGNS`, `OG_V013_DEV`
 (an unpacked v0.1.3 `0700_part_image/dev` tree), `OG_602_DEV` (the same for stock 6.02) and `OG_ZIG` if they are
 not at the workspace defaults.
 
@@ -99,9 +91,13 @@ not at the workspace defaults.
 - The planned camera tests of this build are NTSC only. The PAL presets are the kit's PAL designs (`ogsq880_v1`,
   `og57n880_v1`), which the kit ran on a camera set to PAL; this build has not been run on one.
 - Applied with the dial on stills only, as the kit does; with the dial on movie the next shooting screen retries,
-  and the menu item is greyed.
-- The menu item has not been run on a camera either (check C8): the records copy custom sounds' Volume item, which
-  works on the camera, with the fields listed in `og_menu.c` changed.
+  and Mode is greyed.
+- This menu has not been run on a camera either (check C8). An earlier build listed a new item of its own directly on
+  Media; on the camera it showed no title and could not be selected, because its availability callbacks were inverted
+  and nothing in the custom firmware uses that shape. This build reuses the custom sound page instead, which works on
+  the camera, with the changes listed in the module README.
+- The custom sound settings are gone from the menu, but a custom sound switched on with v0.1.3 stays on (its choice is
+  saved in the camera). Switch both custom sounds off in v0.1.3 before installing this build.
 - While a mode is on, record only in the formats and frame rates the kit lists (XAVC HS 4K / XAVC S 4K at 24p NTSC,
   XAVC S 4K at 25p PAL). The menu still shows 100M for 5.7K: the card fills about three times faster.
 - Set Proxy Recording to Off, as the kit asks. The camera does not play 5.7K files back.

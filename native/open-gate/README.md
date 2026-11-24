@@ -3,8 +3,8 @@
 [Method](../../methods/11-open-gate/README.en.md) · [Layout and pins](layout.json) · [Stored record](stored_record.json)
 
 Freestanding AArch64 C linked at fixed addresses into a new section of v0.1.3's `appFw.so`. Other code calls only
-[`og.h`](og.h): `og_power_on()` (shooting-screen hook), `og_select(mode)` and `og_selected()` (the menu item,
-[`og_menu.h`](og_menu.h)).
+[`og.h`](og.h): `og_power_on()` (shooting-screen hook), `og_select(mode)` and `og_selected()` (the Open Gate
+setting, [`og_menu.h`](og_menu.h)).
 
 ## Files
 
@@ -14,8 +14,7 @@ Freestanding AArch64 C linked at fixed addresses into a new section of v0.1.3's 
 | `og_reconcile.c` | The order of work over the site image: check every site, undo, apply, roll back |
 | `og_mem.c` | The four memory targets behind `og_mem_read` / `og_mem_write`, and NTSC/PAL detection |
 | `og_entry.S` | The two hook trampolines |
-| `og_menu.c` | The Open Gate menu item: getter, setter, commit, blocked, and its records in six native maps |
-| `og_menu_entry.S` | The three registrar trampolines and four per-mid filters |
+| `og_menu.c` | The Open Gate setting's callbacks: getter, setter, commit, and the two "enabled" checks |
 | `og_image.h`, `og_sys.h`, `og_util.c` | Site-image accessors; raw Linux system calls; `memset`/`memcpy` for the compiler |
 | `og_sites.S` | `.incbin` of the generated `og_sites.bin` ([format](../../a7m4/open_gate_sites.py)); never committed |
 
@@ -27,12 +26,12 @@ and pins every source here by SHA-256 in `layout.json`.
 
 | Piece | VA | File offset | Size |
 | --- | --- | --- | --- |
-| Code, strings, site image (R-X) | `0x9063000` | `0x5e73000` | 46,148 of 0xc000 bytes |
-| State and menu records (RW, file-backed zeros) | `0x907f000` | `0x5e7f000` | 2,416 of 0x1000 bytes |
+| Code, strings, site image (R-X) | `0x9063000` | `0x5e73000` | 44,780 of 0xc000 bytes |
+| State (RW, file-backed zeros) | `0x907f000` | `0x5e7f000` | 1,700 of 0x1000 bytes |
 | Program headers | 15 -> 17 entries in place at `0x5e80000`; `e_phnum` and `PT_PHDR` sizes updated | | |
 | Hooks | `0x1ddab68`, `0x1e56b2c`: `bl` to the aspect wrappers `0x9012bd8` / `0x9012ce4` -> `bl og_hook_first/second` | | |
-| Menu hooks | seven more, below | | |
-| Menu placement | Shooting > Media count, one group entry, one relocation after `.rela.dyn` and its two sizes, below | | |
+| Menu hook | `0x1c14e6c`: `b 0x8fb877c` (custom sounds' Volume filter) -> `b og_menu_enabled` | | |
+| Menu | the custom sound page's records and two menu groups, and nine relocations changed in place, below | | |
 
 Both sections sit in the file's existing zero gap (`0x5e72500..0x5e80000`); the file keeps its length. Each hook
 trampoline calls the aspect feature's wrapper first, unchanged (it runs the native presenter creation and registers
@@ -66,55 +65,43 @@ does nothing with the dial on movie, and nothing at all while the mode is Off an
 
 ## Menu item
 
-One custom leaf, mid 1600, options 5638-5640 (Off / 4K 3:2 / 5.7K 3:2, raw values 0-2 = `og_mode`). Its records are
-custom sounds' Volume item's (v0.1.3: leaf `0x8ff80a0`, row `0x8ff8160`, profile `0x8ff8660`) with the fields listed
-in [`og_menu.c`](og_menu.c) changed; they are copied into `.bss` and given their pointers when the registrars run.
+The Open Gate setting is the custom firmware's Custom Shutter Sound page (mid 1592) and its switch (mid 1593), taken
+over. Both are registered in every native map by the custom firmware itself, its filters already accept them
+(supported and id map `0x8f900a0`/`0x8f900b8` for mids 1592..1597, the apply skip at `0x8f900d0` for the switch's leaf,
+option ids 5607..5630 at `0x8fa1000`), and the page's own controller (`0x2d7`) draws it; that is what works on the
+camera. `compose_ap` checks every old value below in v0.1.3 before writing (layout.json `menu`).
 
-| Native map (object, registrar) | Entries | Inserted by |
+| Place | VA | v0.1.3 | Composed |
+| --- | --- | --- | --- |
+| Media group | `0x50fc298` | 4 entries (Format, Rec. Media Settings, Recover Image DB, Display Media Info.) | 5: `{1592, 0, page 0x8fc0400}` |
+| Shutter/Silent group | `0x50fd3d8` | 13 entries, the last two the sound pages 1592 and 1595 | 11, the two slots zeroed |
+| Page, both copies | `0x8fc0400` (group), `0x8ff8000` (page map) +0x64 | 2 and 3 children (switch, import, volume) | 1: the switch |
+| Switch leaf | `0x8fc0490` +0x0c, +0x54 | sound help text, 2 options | none, 3 options |
+| Rows (contiguous from leaf +0x58) | `0x8fc0610`, `0x8fc0690`, `0x8fc0710` | On, Off; the listed focus page's header | Off, 4K 3:2, 5.7K 3:2 (ids 5607..5609, values 0..2 = `og_mode`) |
+| Option-to-leaf pair | `0x8f91c80` | 5609 -> 1596 (focus switch) | 5609 -> 1593 |
+
+Rows are text only, as native text rows: help = the row's text, no images. The third row is the focus switch's first
+row (5609) moved after the other two, with row id `0x1203f0`; the bytes it replaces were only reached through the
+Shutter/Silent entry, and the two relocations inside them are moved away.
+
+Relocations, changed in place (`.rela.dyn` keeps its size, `DT_RELASZ` and `DT_RELACOUNT` unchanged):
+
+| r_offset (v0.1.3) | Addend | Now |
 | --- | --- | --- |
-| leaf `0x7614238`, `0x1cd0d90` | 1600 -> leaf descriptor (0xc0) | `og_menu_register_options` |
-| option `0x7614148`, `0x1cd0fe4` | 5638-5640 -> option rows (0x80 each) | `og_menu_register_options` |
-| profile `0x7614178`, `0x1cd1238` | 1600 -> profile (0x80) | `og_menu_register_parent` |
-| parent `0x7614208`, `0x1cd1934` | 5638-5640 -> 1600 | `og_menu_register_parent` |
-| value `0x76142f8`, `0x1cd29f8` | 5638-5640 -> themselves | `og_menu_register_alias` |
-| alias `0x7614328`, `0x1cd2bec` | 5638-5640 -> themselves | `og_menu_register_alias` |
+| `0x50fd500`, `0x50fd518` | the two sound pages, Shutter/Silent entries 11 and 12 | Media entry 4's page field `0x50fc318`, `0x8fc0400` |
+| `0x8fc0730`, `0x8fc0788` | inside the third row's bytes | the same (four identical relocations of one field) |
+| `0x8fc0508`, `0x8fc0510`, `0x8fc0518` | switch getter, setter, commit | `og_menu_getter`, `og_menu_setter`, `og_menu_commit` |
+| `0x8fc0aa8` | option map entry 5609 -> `0x8fc0920` | `0x8fc0710`, the third row |
+| `0x8fc3d78` | switch profile +0x50, stock "return 1" | `og_menu_profile_enabled` |
 
-Each map is a static object; `compose_ap` checks the GOT slot each constructor loads it from is an
-`R_AARCH64_RELATIVE` to that address. The leaf, profile and value maps are built earlier in the same constructor
-functions as the hooked option (`0x1732000`), parent (`0x173210c`) and alias (`0x1737974`) calls, so those three
-hooks insert into them too.
+The leaf's default (+0xa8, `0x8f98430`: return 0) is Off already and stays.
 
-| Hook | Was (v0.1.3) | Now | Handles |
-| --- | --- | --- | --- |
-| `0x1732000` | `bl 0x90108b8` (aspect) | `bl og_menu_hook_options` | previous, then leaf and option rows |
-| `0x173210c` | `bl 0x90108e0` (aspect) | `bl og_menu_hook_parent` | previous, then profile and parent |
-| `0x1737974` | `bl 0x9010908` (aspect) | `bl og_menu_hook_alias` | previous, then value and alias pairs |
-| `0x1c08bc0` support (mid in w1) | `b 0x8fb90c8` (Volume) | `b og_menu_supported` | 1 for mid 1600 |
-| `0x1c1116c` id map (mid in w1) | `b 0x8fb90e0` (Volume) | `b og_menu_mapped` | 1600 -> 1600 |
-| `0x1c155e0` apply (leaf in x20) | `b 0x8fb90f8` (Volume) | `b og_menu_apply` | our leaf skips the parameter broker, to `0x1c15604` |
-| `0x1c14e6c` blocked (mid in w0) | `b 0x8fb877c` (Volume) | `b og_menu_blocked` | 1 for mid 1600 in movie |
+Both availability callbacks answer "selectable": the native profile update stores profile +0x50's result as the row's
+enabled flag (`0x1c1ea74`), and callers of `0x1c14e6c` open an item only when it returns nonzero (`0x1ba8080`).
+`og_menu_enabled` (the `0x1c14e6c` hook) and `og_menu_profile_enabled` return 0 with the dial on movie, 1 otherwise;
+every other mid goes to the previous head unchanged, which ends in the stock code.
 
-Every other mid, leaf and alias goes to the previous head unchanged, which ends in the stock code. The native apply
-method calls the getter (which returns the value the setter staged while browsing) to find the confirmed row, then
-the commit with its alias, and ignores the commit's result; a failed `og_select` drops the staged value, so the item
-shows `og_selected()` again. Labels: `0x0200ab51`-`0x0200ab53` in the 68 banks and Sony's Off `0x0200a00f`
-([method](../../methods/11-open-gate/README.en.md#menu-item)).
-
-The item is listed on MENU > Shooting > Media, after Display Media Info. `compose_ap` appends it as LUT (mid 1589,
-Color/Tone) and custom sounds (1592/1595, Shutter/Silent) appended theirs, after checking each value below in v0.1.3
-(layout.json `menu.placement`):
-
-| Place | VA / file offset | v0.1.3 | Composed |
-| --- | --- | --- | --- |
-| Media group count | `0x50fc2a0` / `0x50ec2a0` | 4 (Format, Rec. Media Settings, Recover Image DB, Display Media Info.) | 5 |
-| Media entry 4 | `0x50fc308` / `0x50ec308` | 24 zero bytes | `{1600, og_menu_records, 0}` |
-| `.rela.dyn` + 0x1700118 | file `0x17102c0` | unused copy of the old `.rela.plt` | `R_AARCH64_RELATIVE` at `0x50fc310`, addend `og_menu_records` |
-| `DT_RELASZ` | file `0x59cf418` | `0x1700118` | `0x1700130` |
-| `.rela.dyn` `sh_size` | file `0x5da95f8` | `0x1700118` | `0x1700130` |
-
-The group tables are fixed arrays of 30 entries; Image Quality/Rec, next to File Format, uses all 30. The leaf pointer
-needs the relocation because `appFw.so` is loaded at a bias, as every native entry's pointer has one. The 19,080 bytes
-after `.rela.dyn` (up to `.init`) are where 6.02's `.rela.plt` was: v0.1.3 moved it (`DT_JMPREL` `0x8f64be8`) and grew
-`.rela.dyn` over its first 137 entries, so the rest is a byte-identical copy of the live table's tail that nothing
-reads. `DT_RELACOUNT` stays `0xf2c40`: it counts the leading run of RELATIVE entries, which ends where the
-non-RELATIVE block starts, and the custom firmware's own appended RELATIVEs are outside it too.
+The native apply method calls the getter (which returns the value the setter staged while browsing) to find the
+confirmed row, then the commit with its alias, and ignores the commit's result; a failed `og_select` drops the staged
+value, so the setting shows `og_selected()` again. The texts are the page's own ids, rewritten in place in the 68
+banks ([method](../../methods/11-open-gate/README.en.md#menu-item)).
