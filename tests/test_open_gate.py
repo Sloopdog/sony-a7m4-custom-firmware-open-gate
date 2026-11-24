@@ -1,7 +1,8 @@
 """Open gate: the site image against the kit's designs and v0.1.3's files, and the camera module on the host.
 
 Needs ArcaneLantern/a7iv-open-gate-test's designs and an unpacked v0.1.3 tree (fwtool); they are not in the repo.
-Set OG_DESIGNS and OG_V013_DEV, or keep the workspace layout (../a7iv-open-gate-test, ../out/open-gate/...).
+Set OG_DESIGNS and OG_V013_DEV, or keep the workspace layout (../a7iv-open-gate-test, ../unpacked from
+scripts/unpack.sh).
 """
 import argparse
 import hashlib
@@ -23,7 +24,8 @@ from a7m4.open_gate_sites import (_CP_IMAGE_VA, _NATIVE, PRESETS, _ROOT, STEP1, 
 
 WORKSPACE = _ROOT.parent
 DESIGNS = Path(os.environ.get("OG_DESIGNS", WORKSPACE / "a7iv-open-gate-test/windows/tools/modding/designs"))
-DEV = Path(os.environ.get("OG_V013_DEV", WORKSPACE / "out/open-gate/v013-unpacked/firmware.tar_unpacked/0700_part_image/dev"))
+DEV = Path(os.environ.get("OG_V013_DEV",
+                         WORKSPACE / "unpacked/BODYDATA-custom-v0.1.3/firmware.tar_unpacked/0700_part_image/dev"))
 KIT_APPLY = DESIGNS.parents[1] / "camera_tests/CT6_memory_read_check/open_gate_apply.py"
 FILES = {"cpapp-b.bin": ("nflasha8_unpacked/cpapp-b.bin", "nflasha8:CPAPP-B.BIN"),
          "av-cam.bin": ("nflasha3_unpacked/av-cam.bin", "nflasha3:av-cam.bin"),
@@ -181,12 +183,9 @@ def test_generated_config_and_linker_script_follow_layout():
     script = _linker_script(lay)
     assert ".text 0x9063000" in script and ".bss 0x907f000" in script
     assert "hook_first_previous = 0x9012bd8;" in script and "dlsym = 0x17166a0;" in script
-    assert "#define OG_MENU_MID 1600\n" in header and "#define OG_MENU_ALIAS_BASE 5638\n" in header
-    assert "#define OG_MENU_TEXT_TITLE 0x0200ab51\n" in header and "#define OG_MENU_TEXT_OFF 0x0200a00f\n" in header
-    for line in ("og_menu_previous_options = 0x90108b8;", "og_menu_previous_blocked = 0x8fb877c;",
-                 "og_native_register_leaf = 0x1cd0d90;", "og_native_map_alias = 0x7614328;", "og_native_true = 0x1c9efbc;",
-                 "og_menu_apply_custom = 0x1c15604;"):
-        assert line in script, line
+    assert "#define OG_MENU_MID 1593u\n" in header and "#define OG_MENU_ALIAS_BASE 5607u\n" in header
+    assert "og_menu_previous_enabled = 0x8fb877c;" in script and "native_mode = 0x28ecdf8;" in script
+    assert "og_native" not in script and "OG_MENU_TEXT" not in header
 
 
 def build_args(tmp_path, **overrides):
@@ -449,7 +448,7 @@ def test_og_mem_on_the_host(image, tmp_path):
     assert "ok read above the cached page" in result.stdout and "ok detect pal, chain ascending" in result.stdout
 
 
-# --- PR 2: the Open Gate menu item -----------------------------------------------------------------------------------
+# --- PR 2: the Open Gate page (the custom firmware's Custom Shutter Sound page, taken over) ------------------------
 
 APP = DEV / "nflasha15_unpacked/share/app"
 APPFW = DEV / "nflasha15_unpacked/lib/appFw.so"
@@ -457,31 +456,21 @@ STOCK_APP = Path(os.environ.get("OG_602_DEV", WORKSPACE / "unpacked/BODYDATA-6.0
     / "nflasha15_unpacked/share/app"
 ZIG = Path(os.environ.get("OG_ZIG", WORKSPACE / "tools/zig-aarch64-macos-0.15.2/zig"))
 MENU = _layout()["menu"]
-MID, ALIAS = MENU["mid"], MENU["alias_base"]
+MID, PAGE_MID, ALIAS = MENU["mid"], MENU["page_mid"], MENU["alias_base"]
 TEXT = {k: int(v, 16) for k, v in MENU["text"].items()}
 OPTION_TEXT = (TEXT["off"], TEXT["uhd_32"], TEXT["k57_32"])
-# The template fields og_menu.c changes from v0.1.3's Volume records (layout.json "menu"."templates").
-LEAF_PATCHES = {0x00: TEXT["title"], 0x0c: 0xffffffff, 0x14: 0xca4, 0x54: 3, 0x60: 0xffffffff, 0xbc: 0xca4}
-ROW_PATCHES = {0x10: 0xffffffff, 0x20: 0xffffffff, 0x24: 0xffffffff}   # plus alias, text and value per row
-PROFILE_PATCHES = {0x00: MID}
-# Volume's pointer fields and the symbols that replace them.
-LEAF_POINTERS = {0x58: (0x8ff8160, "rows"), 0x70: (0x1c9efbc, "og_native_true"), 0x78: (0x8fb8668, "og_menu_getter"),
-                 0x80: (0x8fb86b4, "og_menu_setter"), 0x88: (0x8fb86ec, "og_menu_commit"),
-                 0xa8: (0x8f98430, "og_menu_default")}
-PROFILE_POINTERS = {0x48: (0x1c9efbc, "og_native_true"), 0x50: (0x8fb876c, "og_menu_profile_blocked")}
-# The menu tree (GOT 0x5a157b0 -> {u32 tabs; tabs}): tabs of 0x2e10 bytes = 16-byte header + 16 groups of 0x2e0 bytes =
-# 16-byte header {id, title, count, 0} + 30 entries {u64 mid, leaf*, page*}.
-TREE, TAB_BYTES, GROUP_BYTES = 0x50f6380, 0x2e10, 0x2e0
-SHOOTING = TREE + 8 + 2 * TAB_BYTES
-IMAGE_QUALITY, MEDIA = SHOOTING + 16, SHOOTING + 16 + GROUP_BYTES
-SLOT = MEDIA + 16 + 4 * 24   # Media's first free entry
-LUT_GROUP = 0x50ffc28        # Exposure/Color > Color/Tone, where LUT appended mid 1589 as entry 7
+NATIVE_TRUE = 0x1c9efbc                   # stock "mov w0, #1; ret"
+MEDIA, SILENT = 0x50fc298, 0x50fd3d8      # MENU > Shooting > Media, MENU > Shooting > Shutter/Silent
+GROUP_BYTES = 0x2e0                       # 16-byte header {id, title, count, 0} + 30 entries {u64 mid, leaf*, page*}
+PAGE, LIVE_PAGE, FOCUS_PAGE = 0x8fc0400, 0x8ff8000, 0x8fc0710
+LEAF, ROWS, PROFILE = 0x8fc0490, 0x8fc0610, 0x8fc3d28
+SLOT = MEDIA + 16 + 4 * 24                # Media's first free entry
 
 needs_appfw = pytest.mark.skipif(not APPFW.is_file(), reason="no v0.1.3 tree")
 
 
 class Image:
-    """v0.1.3's appFw.so (or a composed one) by VA, with its R_AARCH64_RELATIVE table."""
+    """v0.1.3's appFw.so (or a composed one) by VA, with its relocation table."""
 
     def __init__(self, data):
         import io
@@ -503,9 +492,14 @@ class Image:
     def u32(self, va):
         return struct.unpack("<I", self.bytes(va, 4))[0]
 
+    def relatives(self, va):
+        """Addends of every R_AARCH64_RELATIVE at va (the loader writes each in turn)."""
+        return [int(r[2]) for r in self.rela[(self.rela[:, 0] == va) & (self.rela[:, 1] == 1027)]]
+
     def relative(self, va):
-        rows = self.rela[(self.rela[:, 0] == va) & (self.rela[:, 1] == 1027)]
-        return int(rows[0, 2]) if len(rows) else None
+        found = set(self.relatives(va))
+        assert len(found) <= 1, f"{va:#x} has differing relocations"
+        return found.pop() if found else None
 
     def branch(self, va):
         word = self.u32(va)
@@ -525,45 +519,14 @@ def v013():
     return Image(data)
 
 
-def patched(record, patches):
-    out = bytearray(record)
-    for at, value in patches.items():
-        struct.pack_into("<I", out, at, value)
-    return bytes(out)
-
-
 def group_entries(img, group):
-    """A menu group's live entries as (mid, leaf, page)."""
-    return [struct.unpack("<QQQ", img.bytes(group + 16 + 24 * i, 24)) for i in range(img.u32(group + 8))]
+    """A menu group's live entries as (mid, leaf, page), pointers as their relocations give them."""
+    return [(img.u32(group + 16 + 24 * i), img.relative(group + 24 + 24 * i) or 0, img.relative(group + 32 + 24 * i) or 0)
+            for i in range(img.u32(group + 8))]
 
 
-def placement_offsets(v013):
-    """File offsets and sizes of the five placement writes, found from v0.1.3's own headers: Media's count, its first
-    free entry, the 24 bytes after .rela.dyn, DT_RELASZ's value and .rela.dyn's sh_size."""
-    elf = v013.elf
-    rela = elf.get_section_by_name(".rela.dyn")
-    index = [s.name for s in elf.iter_sections()].index(".rela.dyn")
-    dynamic = elf.get_section_by_name(".dynamic")
-    relasz = [t["d_tag"] for t in dynamic.iter_tags()].index("DT_RELASZ")
-    return {"count": (v013.offset(MEDIA + 8), 4), "entry": (v013.offset(SLOT), 24),
-            "relocation": (rela["sh_offset"] + rela["sh_size"], 24),
-            "DT_RELASZ": (dynamic["sh_offset"] + 16 * relasz + 8, 8),
-            "sh_size": (elf["e_shoff"] + index * elf["e_shentsize"] + 0x20, 8)}
-
-
-def parse_record(text):
-    """og_menu_host's record dump: bytes, with '<symbol>' for each pointer field -> (bytes with zeros, {offset: symbol})."""
-    out, pointers, i = bytearray(), {}, 0
-    while i < len(text):
-        if text[i] == "<":
-            end = text.index(">", i)
-            pointers[len(out)] = text[i + 1:end]
-            out.extend(bytes(8))
-            i = end + 1
-        else:
-            out.append(int(text[i:i + 2], 16))
-            i += 2
-    return bytes(out), pointers
+def page_children(img, page):
+    return [(img.u32(page + 0x70 + 16 * i), img.relative(page + 0x78 + 16 * i)) for i in range(img.u32(page + 0x64))]
 
 
 @pytest.fixture(scope="module")
@@ -579,82 +542,45 @@ def menu_host(tmp_path_factory):
                     str(_ROOT / "tests/native/og_menu_host.c"), str(_NATIVE / "og_menu.c"), "-o", str(binary)], check=True)
     result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
-    lines = result.stdout.splitlines()
-    assert not [line for line in lines if line.startswith("FAIL")]
-    maps = {w[1]: [tuple(e.split(",")) for e in w[3:]] for w in (line.split() for line in lines) if w[0] == "map"}
-    records = {w[1]: parse_record(w[2]) for w in (line.split() for line in lines) if w[0] == "record"}
-    return lines, maps, records
+    return result.stdout.splitlines()
 
 
 def test_og_menu_callbacks_on_the_host(menu_host):
-    lines, _, _ = menu_host
+    lines = menu_host
+    assert not [line for line in lines if line.startswith("FAIL")]
     for check in ("getter reflects og_selected", "setter stages the browsed value", "commit selects the option's mode",
                   "commit reports any other status as failure", "a failed commit drops the staged value",
                   "commit refuses an alias below the item's", "commit refuses an alias above the item's",
-                  "blocked is 1 exactly in movie", "the profile callback agrees", "blocked is 0 without a dial",
+                  "enabled is 0 exactly in movie", "the profile callback agrees", "enabled is 1 without a dial",
                   "the item never reaches the previous check", "other mids chain to the previous check"):
         assert f"ok {check}" in lines, check
     assert lines.count("ok commit reports any other status as failure") == 7   # OG_BUSY .. OG_NOT_SAVED
 
 
-def test_og_menu_registers_the_item_in_six_maps(menu_host):
-    _, maps, _ = menu_host
-    aliases = [str(ALIAS + i) for i in range(3)]
-    assert maps["leaf"] == [(str(MID), "leaf")] and maps["profile"] == [(str(MID), "profile")]
-    assert maps["option"] == [(a, f"row{i}") for i, a in enumerate(aliases)]
-    assert maps["parent"] == [(a, str(MID)) for a in aliases]
-    assert maps["value"] == maps["alias"] == [(a, a) for a in aliases]
-
-
 @needs_appfw
-def test_og_menu_records_are_volumes_with_the_listed_fields_changed(menu_host, v013):
-    _, _, records = menu_host
-    templates = {k: int(v, 16) for k, v in MENU["templates"].items() if k != "what"}
-    volume_leaf, volume_row = v013.bytes(templates["leaf"], 0xc0), v013.bytes(templates["option"], 0x80)
-    volume_profile = v013.bytes(templates["profile"], 0x80)
-    for record, pointers in ((volume_leaf, LEAF_POINTERS), (volume_profile, PROFILE_POINTERS)):
-        base = templates["leaf"] if record is volume_leaf else templates["profile"]
-        for at, (target, _) in pointers.items():
-            assert struct.unpack_from("<Q", record, at)[0] == target and v013.relative(base + at) == target
-    leaf, leaf_pointers = records["leaf"]
-    assert leaf_pointers == {at: name for at, (_, name) in LEAF_POINTERS.items()}
-    blank = {at: 0 for at in LEAF_POINTERS} | {at + 4: 0 for at in LEAF_POINTERS}
-    assert leaf == patched(volume_leaf, blank | LEAF_PATCHES)
-    for i in range(3):
-        row, row_pointers = records[f"row{i}"]
-        assert not row_pointers
-        assert row == patched(volume_row, ROW_PATCHES | {0x00: ALIAS + i, 0x04: ALIAS + i, 0x08: OPTION_TEXT[i], 0x34: i})
-    profile, profile_pointers = records["profile"]
-    assert profile_pointers == {at: name for at, (_, name) in PROFILE_POINTERS.items()}
-    blank = {at: 0 for at in PROFILE_POINTERS} | {at + 4: 0 for at in PROFILE_POINTERS}
-    assert profile == patched(volume_profile, blank | PROFILE_PATCHES)
-
-
-@needs_appfw
-def test_menu_ids_are_unused_in_v013(v013):
-    """The mid and aliases are in no native table, no custom-firmware registration and no menu group."""
-    leaves = set(v013.table(0x50d6f80, 1473, 16)) | {1589, 1591, 1593, 1594, 1596, 1597, 1598, 1599}
-    profiles = set(v013.table(0x50f2900, 820, 16)) | {1589, 1591} | set(range(1592, 1600))
-    pages = set(v013.table(0x50f5c40, 116, 16)) | {1592, 1595}
-    assert MID not in leaves | profiles | pages and max(leaves) < MID
-    custom = {0x8f6ce70: 16, 0x8fc0a80: 4, 0x8ff8e00: 20, 0x9020400: 4}   # LUT, sounds, volume, aspect option rows
-    options = set(range(5591)) | {a for base, n in custom.items() for a in v013.table(base, n, 16)} | set(range(5631, 5638))
-    assert not {ALIAS, ALIAS + 1, ALIAS + 2} & options and max(options) < ALIAS
-    for base in (0x3eb07a0, 0x3edbf78, 0x3ee6e30):   # native parent, value and alias tables
-        assert not {ALIAS, ALIAS + 1, ALIAS + 2} & set(v013.table(base, 5591, 8))
-    for tab in range(v013.u32(TREE)):
-        for g in range(v013.u32(TREE + 8 + tab * TAB_BYTES + 8)):
-            group = TREE + 8 + tab * TAB_BYTES + 16 + g * GROUP_BYTES
-            assert MID not in v013.table(group + 16, v013.u32(group + 8), 24)
-
-
-@needs_appfw
-def test_image_quality_rec_has_no_free_slot(v013):
-    """Why the item is on Media, not next to File Format: Image Quality/Rec holds all 30 of its fixed slots."""
-    assert v013.u32(SHOOTING) == 2 and v013.u32(IMAGE_QUALITY + 4) == 0x0200606e   # tab 'Shooting', 'Image Quality/Rec'
-    assert v013.u32(IMAGE_QUALITY + 8) == 30 and 16 + 30 * 24 == GROUP_BYTES
-    assert 27 in v013.table(IMAGE_QUALITY + 16, 30, 24) and 34 in v013.table(IMAGE_QUALITY + 16, 30, 24)   # File Format x2
-    assert MEDIA == IMAGE_QUALITY + GROUP_BYTES and v013.u32(MEDIA + 4) == 0x02006057   # 'Media', the next group
+def test_v013_sound_page_is_a_complete_custom_item(v013):
+    """What the takeover relies on, in v0.1.3: the page and switch are registered in every native map, accepted by the
+    custom firmware's filters, and listed last on Shutter/Silent; the switch's profile +0x50 is the stock 'return 1'
+    (an always-selectable item), which is how the native profile update reads it: its result is the row's enabled
+    flag (0x1c1ea74 stores it), and callers of 0x1c14e6c open an item only when it returns nonzero (0x1ba8080)."""
+    leaves = dict(zip(v013.table(0x8fc0a20, 4, 16), (v013.relative(0x8fc0a28 + 16 * i) for i in range(4))))
+    assert leaves == {MID: LEAF, MID + 1: 0x8fc0550, MID + 3: 0x8fc07a0, MID + 4: 0x8fc0860}
+    assert dict(zip(v013.table(0x8fc0a60, 2, 16), (v013.relative(0x8fc0a68 + 16 * i) for i in range(2)))) == \
+        {PAGE_MID: LIVE_PAGE, PAGE_MID + 3: 0x8ff86e0}
+    options = dict(zip(v013.table(0x8fc0a80, 4, 16), (v013.relative(0x8fc0a88 + 16 * i) for i in range(4))))
+    assert options == {ALIAS: ROWS, ALIAS + 1: ROWS + 0x80, ALIAS + 2: 0x8fc0920, ALIAS + 3: 0x8fc09a0}
+    assert v013.table(0x8fc3fa8, 6, 16) == list(range(PAGE_MID, PAGE_MID + 6)) and v013.relative(0x8fc3fb8 + 8) == PROFILE
+    assert v013.u32(PROFILE) == MID and v013.relative(PROFILE + 0x48) == v013.relative(PROFILE + 0x50) == NATIVE_TRUE
+    assert v013.u32(NATIVE_TRUE) == 0x52800020 and v013.u32(NATIVE_TRUE + 4) == 0xd65f03c0
+    sub_w16_w1 = lambda imm: 0x51000000 | (imm << 10) | (1 << 5) | 16
+    assert v013.u32(0x8f900a0) == v013.u32(0x8f900b8) == sub_w16_w1(PAGE_MID)       # supported / mapped: mids 1592..
+    assert v013.u32(0x8f900a4) == v013.u32(0x8f900bc) == 0x7100161f                  # cmp w16, #5  (.. 1597)
+    assert v013.branch(0x1c08bc0)[1] == 0x8fb90c8 and v013.u32(0x8fb90dc) >> 26 == 5  # chain reaches 0x8f900a0
+    assert v013.u32(0x8fa1000) == 0x52800010 | (ALIAS << 5) and v013.u32(0x8fa1008) == 0x71005e1f   # ids 5607..5630
+    assert v013.branch(0x1c18004) == ("b", 0x8fa1000)
+    assert v013.u32(0x1c1ea74) == 0xf9402ac0 and v013.u32(0x1c1ea7c) == 0x39000a80   # ldr x0, [x22, #0x50]; strb w0, [x20, #2]
+    assert v013.branch(0x1ba807c) == ("bl", 0x1c14e6c) and v013.u32(0x1ba8084) & 0xff00001f == 0x54000000   # b.eq: refuse
+    assert group_entries(v013, SILENT)[-2:] == [(PAGE_MID, 0, PAGE), (PAGE_MID + 3, 0, FOCUS_PAGE)]
 
 
 @pytest.fixture(scope="module")
@@ -665,171 +591,140 @@ def composed(image, v013, tmp_path_factory):
     return module, Image(compose_ap(v013.data, module, _layout()))
 
 
+def takeover_places(v013):
+    """File (offset, bytes) of every place the takeover may change, from layout.json."""
+    rela = v013.elf.get_section_by_name(".rela.dyn")
+    places = [(v013.offset(MEDIA + 8), 4), (v013.offset(SLOT), 24), (v013.offset(SILENT + 8), 4),
+              (v013.offset(SILENT + 16 + 11 * 24), 48), (v013.offset(PAGE + 0x64), 4), (v013.offset(LIVE_PAGE + 0x64), 4),
+              (v013.offset(LEAF + 0x0c), 4), (v013.offset(LEAF + 0x54), 4), (v013.offset(ROWS), 3 * 0x80),
+              (v013.offset(int(MENU["parent_pair"]["va"], 16)), 8)]
+    for r in MENU["relocations"]["retarget"]:
+        index = int((v013.rela[:, 0] == int(r["r_offset"], 16)).nonzero()[0][0])
+        places += [(rela["sh_offset"] + 24 * index, 24), (v013.offset(int(r["to"], 16)), 8)]
+    return places
+
+
 def test_composed_appfw_changes_only_the_listed_places(composed, v013):
     import numpy as np
     module, out = composed
     differ = np.flatnonzero(np.frombuffer(v013.data, np.uint8) != np.frombuffer(out.data, np.uint8))
     hooks = [v013.offset(int(h["va"], 16)) for h in _layout()["hooks"]]
-    places = placement_offsets(v013)
     allowed = [(0x38, 0x3a), (0x5e73000, 0x5e73000 + len(module.text)), (0x5e80000, 0x5e80000 + 17 * 56)]
-    allowed += [(at, at + 4) for at in hooks] + [(at, at + n) for at, n in places.values()]
+    allowed += [(at, at + 4) for at in hooks] + [(at, at + n) for at, n in takeover_places(v013)]
     assert all(any(lo <= int(i) < hi for lo, hi in allowed) for i in differ)
-    assert {v013.offset(int(h["va"], 16)) for h in _layout()["hooks"]} <= {int(i) & ~3 for i in differ}
-    assert all(any(at <= int(i) < at + n for i in differ) for at, n in places.values())
-    place = MENU["placement"]
-    assert places == {"count": (v013.offset(int(place["group"]["va"], 16) + 8), 4),
-                      "entry": (v013.offset(int(place["slot"], 16)), 24),
-                      "relocation": (int(place["rela_dyn"]["relocation"], 16), 24),
-                      "DT_RELASZ": (int(place["dynamic"]["DT_RELASZ"], 16) + 8, 8),
-                      "sh_size": (int(place["rela_dyn"]["section_header"], 16) + 0x20, 8)}
+    assert set(hooks) <= {int(i) & ~3 for i in differ}
+    assert len(out.rela) == len(v013.rela)
+    tags = lambda img: {t["d_tag"]: t["d_val"] for t in img.elf.get_section_by_name(".dynamic").iter_tags()}
+    assert tags(out) == tags(v013)
 
 
-def test_composed_media_group_lists_the_item(composed, v013):
-    """MENU > Shooting > Media gets the item after its four native ones; every other group, Image Quality/Rec included,
-    keeps its bytes."""
-    import numpy as np
-    module, out = composed
-    leaf = module.symbols["og_menu_records"]
+def test_composed_media_lists_the_open_gate_page_and_shutter_silent_loses_both_sound_pages(composed, v013):
+    _, out = composed
     native = group_entries(v013, MEDIA)
     assert [e[0] for e in native] == [188, 189, 193, 194]   # Format, Rec. Media Settings, Recover Image DB, Media Info.
-    assert group_entries(out, MEDIA) == native + [(MID, leaf, 0)]
-    assert out.relative(SLOT + 8) == leaf and out.relative(SLOT + 16) is None
-    for i, (_, item, page) in enumerate(native):   # each native pointer has its RELATIVE the same way
-        assert out.relative(MEDIA + 16 + 24 * i + (8 if item else 16)) == (item or page)
+    assert group_entries(out, MEDIA) == native + [(PAGE_MID, 0, PAGE)]
+    assert out.relatives(SLOT + 16) == [PAGE] * 4 and out.relative(SLOT + 8) is None
     assert not any(out.bytes(SLOT + 24, MEDIA + GROUP_BYTES - SLOT - 24))
-    size = 8 + v013.u32(TREE) * TAB_BYTES
-    before, after = (np.frombuffer(img.bytes(TREE, size), np.uint8) for img in (v013, out))
-    changed = {TREE + int(i) for i in np.flatnonzero(before != after)}
-    assert changed and changed <= set(range(MEDIA + 8, MEDIA + 12)) | set(range(SLOT, SLOT + 24))
-    assert out.bytes(IMAGE_QUALITY, GROUP_BYTES) == v013.bytes(IMAGE_QUALITY, GROUP_BYTES)
+    assert group_entries(out, SILENT) == group_entries(v013, SILENT)[:-2]
+    freed = SILENT + 16 + 11 * 24
+    assert not any(out.bytes(freed, SILENT + GROUP_BYTES - freed))
+    assert not ((out.rela[:, 0] >= freed) & (out.rela[:, 0] < SILENT + GROUP_BYTES)).any()
+    # Every other group of the menu tree keeps its bytes.
+    tree = 0x50f6380
+    size = 8 + v013.u32(tree) * 0x2e10
+    before, after = v013.bytes(tree, size), out.bytes(tree, size)
+    changed = {tree + i for i in range(size) if before[i] != after[i]}
+    assert changed <= set(range(MEDIA, MEDIA + GROUP_BYTES)) | set(range(SILENT, SILENT + GROUP_BYTES))
 
 
-def test_composed_relocation_is_one_relative_after_rela_dyn(composed, v013):
-    """The leaf pointer's R_AARCH64_RELATIVE is appended to .rela.dyn over the unused copy of the old .rela.plt, as
-    v0.1.3 appended LUT's; the loader's sizes match the table and DT_RELACOUNT is still the leading RELATIVE run."""
-    import numpy as np
+def test_composed_page_holds_only_the_open_gate_setting(composed, v013):
     module, out = composed
-    leaf = module.symbols["og_menu_records"]
-
-    def tags(img):
-        return {t["d_tag"]: t["d_val"] for t in img.elf.get_section_by_name(".dynamic").iter_tags()}
-
-    old, new = (img.elf.get_section_by_name(".rela.dyn") for img in (v013, out))
-    before, after = tags(v013), tags(out)
-    assert new["sh_offset"] == old["sh_offset"] and new["sh_size"] == old["sh_size"] + 24 == after["DT_RELASZ"]
-    assert after["DT_RELAENT"] == 24 and after["DT_RELA"] == old["sh_addr"] == old["sh_offset"]   # VA = file offset
-    assert {k: v for k, v in after.items() if k != "DT_RELASZ"} == {k: v for k, v in before.items() if k != "DT_RELASZ"}
-    assert (out.rela[:-1] == v013.rela).all() and tuple(int(x) for x in out.rela[-1]) == (SLOT + 8, 1027, leaf)
-    count, others = after["DT_RELACOUNT"], np.flatnonzero(v013.rela[:, 1] != 1027)
-    assert count == others[0] and (out.rela[:count, 1] == 1027).all()
-    # The precedent: LUT's leaf pointer (Color/Tone entry 7) is a RELATIVE after the non-RELATIVE block, outside the count.
-    assert group_entries(v013, LUT_GROUP)[7] == (1589, 0x8f60000, 0)
-    lut = np.flatnonzero(v013.rela[:, 0] == LUT_GROUP + 16 + 7 * 24 + 8)
-    assert len(lut) == 1 and lut[0] > others[-1] and int(v013.rela[lut[0], 2]) == 0x8f60000
-    # Where it goes: outside every section, up to .init the bytes are the tail of the live .rela.plt (DT_JMPREL).
-    end = old["sh_offset"] + old["sh_size"]
-    init = v013.elf.get_section_by_name(".init")["sh_offset"]
-    plt = v013.elf.get_section_by_name(".rela.plt")
-    assert before["DT_JMPREL"] == plt["sh_addr"] and before["DT_PLTRELSZ"] == plt["sh_size"] and plt["sh_offset"] > init
-    assert v013.data[end:init] == v013.bytes(plt["sh_addr"] + plt["sh_size"] - (init - end), init - end)
-    assert not [s.name for s in v013.elf.iter_sections() if s["sh_type"] != "SHT_NOBITS" and s["sh_size"]
-                and s["sh_offset"] < end + 24 and end < s["sh_offset"] + s["sh_size"]]
-    assert out.data[end + 24:init] == v013.data[end + 24:init]
+    for page, before in ((PAGE, 2), (LIVE_PAGE, 3)):
+        assert out.u32(page) == TEXT["page"] and len(page_children(v013, page)) == before
+        assert page_children(out, page) == [(MID, LEAF)]
+        assert out.bytes(page, 0x64) == v013.bytes(page, 0x64)   # header kept: title, controller 0x2d7, flags
+    assert out.u32(LEAF) == TEXT["title"] and out.u32(LEAF + 0x0c) == 0xffffffff and out.u32(LEAF + 0x54) == 3
+    assert out.relative(LEAF + 0x58) == ROWS and out.relative(LEAF + 0x70) == NATIVE_TRUE
+    for at, name in ((0x78, "og_menu_getter"), (0x80, "og_menu_setter"), (0x88, "og_menu_commit")):
+        assert out.relative(LEAF + at) == module.symbols[name] and struct.unpack("<Q", out.bytes(LEAF + at, 8))[0] == module.symbols[name]
+    assert out.relative(LEAF + 0xa8) == 0x8f98430 and out.u32(0x8f98430) == 0x2a1f03e0   # default: mov w0, wzr (Off)
+    assert out.relative(PROFILE + 0x50) == module.symbols["og_menu_profile_enabled"]
+    assert out.relative(PROFILE + 0x48) == NATIVE_TRUE and out.bytes(PROFILE, 0x48) == v013.bytes(PROFILE, 0x48)
 
 
-@needs_appfw
-def test_menu_placement_refuses_another_layout(v013):
-    from a7m4.open_gate import _place_menu_item
+def test_composed_rows_are_off_4k_and_57k(composed, v013):
+    _, out = composed
+    f = {k: int(v, 16) for k, v in MENU["row_fields"].items() if k != "what"}
+    for i in range(3):
+        row = ROWS + 0x80 * i
+        assert out.u32(row) == out.u32(row + 4) == ALIAS + i
+        assert out.u32(row + f["text"]) == out.u32(row + f["help"]) == OPTION_TEXT[i]
+        assert out.u32(row + f["images"]) == out.u32(row + f["images"] + 4) == 0xffffffff and out.u32(row + f["value"]) == i
+        source = 0x8fc0920 if i == 2 else row   # the third row is the focus switch's first, moved
+        kept = [k for k in range(0, 0x80, 4) if k not in (f["text"], f["help"], f["images"], f["images"] + 4, f["value"], f["row_id"])]
+        assert [out.u32(row + k) for k in kept] == [v013.u32(source + k) for k in kept]
+        assert out.u32(row + f["row_id"]) == 0x001203ee + i
+        assert not ((out.rela[:, 0] >= row) & (out.rela[:, 0] < row + 0x80)).any()
+    options = dict(zip(out.table(0x8fc0a80, 4, 16), (out.relative(0x8fc0a88 + 16 * i) for i in range(4))))
+    assert options == {ALIAS: ROWS, ALIAS + 1: ROWS + 0x80, ALIAS + 2: ROWS + 0x100, ALIAS + 3: 0x8fc09a0}
+    pairs = [struct.unpack("<II", out.bytes(0x8f91c50 + 8 * i, 8)) for i in range(8)]
+    assert pairs[:4] == [(ALIAS + i, ALIAS + i) for i in range(4)]                     # value map: unchanged
+    assert pairs[4:] == [(ALIAS, MID), (ALIAS + 1, MID), (ALIAS + 2, MID), (ALIAS + 3, MID + 3)]   # option -> leaf
+    # Nothing points at the bytes the third row replaced, except the option map entry that now names it.
+    into = (out.rela[:, 2] >= FOCUS_PAGE) & (out.rela[:, 2] < FOCUS_PAGE + 0x80)
+    assert [int(x) for x in out.rela[into, 0]] == [0x8fc0aa8]
+
+
+def test_composed_relocations_change_only_the_listed_entries(composed, v013):
+    module, out = composed
+    differ = [i for i in range(len(v013.rela)) if (v013.rela[i] != out.rela[i]).any()]
+    spec = MENU["relocations"]["retarget"]
+    assert len(differ) == sum(r["r_offset"] != r["to"] or r["new"] != r["addend"] for r in spec)
+    for r in spec:
+        old = int(r["r_offset"], 16)
+        index = int((v013.rela[:, 0] == old).nonzero()[0][0])
+        value = int(r["new"], 16) if r["new"].startswith("0x") else module.symbols[r["new"]]
+        assert tuple(int(x) for x in v013.rela[index]) == (old, 1027, int(r["addend"], 16))
+        assert tuple(int(x) for x in out.rela[index]) == (int(r["to"], 16), 1027, value)
+
+
+def test_takeover_refuses_another_layout(v013):
+    from a7m4.open_gate import _take_over_sound_page
     lay = _layout()
-    leaf = int(lay["appfw"]["rw"]["va"], 16) + 0x6b0
-    place = lay["menu"]["placement"]
-    end = int(place["rela_dyn"]["relocation"], 16)
-    _place_menu_item(bytearray(v013.data), v013.data, v013.elf, v013.loads, leaf, lay)
-    for at, message in ((v013.offset(MEDIA + 8), "is not the expected one"),
-                        (v013.offset(MEDIA + 16 + 29 * 24), "free slots are not free"),
-                        (end + 100, "not the unused copy"),
-                        (int(place["dynamic"]["DT_RELACOUNT"], 16) + 8, "does not size"),
-                        (int(place["rela_dyn"]["section_header"], 16) + 0x20, "section header")):
+    symbols = {"og_menu_getter": 0x9063000, "og_menu_setter": 0x9063010, "og_menu_commit": 0x9063020,
+               "og_menu_profile_enabled": 0x9063030}
+    _take_over_sound_page(bytearray(v013.data), v013.data, v013.elf, v013.loads, symbols, lay)
+    for va, message in ((MEDIA + 8, "Group"), (SILENT + 16 + 12 * 24 + 16, "two sound pages"), (PAGE + 0x64, "Sound page"),
+                        (LEAF + 0x54, "switch leaf"), (0x8fc0920, "Row"), (ROWS + 0x80 + 8, "Row"),
+                        (int(MENU["parent_pair"]["va"], 16) + 4, "Parent pair"), (PROFILE, "profile")):
         tampered = bytearray(v013.data)
-        tampered[at] ^= 1
+        tampered[v013.offset(va)] ^= 1
         with pytest.raises(ToolError, match=message):
-            _place_menu_item(tampered, bytes(tampered), v013.elf, v013.loads, leaf, lay)
+            _take_over_sound_page(bytearray(tampered), bytes(tampered), v013.elf, v013.loads, symbols, lay)
     moved = json.loads(json.dumps(lay))
-    moved["menu"]["placement"]["rela_dyn"]["relocation"] = hex(end + 24)
-    with pytest.raises(ToolError, match="section header"):
-        _place_menu_item(bytearray(v013.data), v013.data, v013.elf, v013.loads, leaf, moved)
-    with pytest.raises(ToolError, match="RW section"):
-        _place_menu_item(bytearray(v013.data), v013.data, v013.elf, v013.loads, leaf + 8, lay)
+    moved["menu"]["relocations"]["retarget"][4]["addend"] = "0x8f97f64"
+    with pytest.raises(ToolError, match="Relocation at 0x8fc0508"):
+        _take_over_sound_page(bytearray(v013.data), v013.data, v013.elf, v013.loads, symbols, moved)
+    with pytest.raises(ToolError, match="og_menu_commit"):
+        _take_over_sound_page(bytearray(v013.data), v013.data, v013.elf, v013.loads,
+                              {k: v for k, v in symbols.items() if k != "og_menu_commit"}, lay)
 
 
 def test_composed_hooks_reach_the_module_and_chain_to_the_previous_heads(composed, v013):
     module, out = composed
-    for hook in _layout()["hooks"]:
+    hooks = _layout()["hooks"]
+    assert [h["entry"] for h in hooks] == ["og_hook_first", "og_hook_second", "og_menu_enabled"]
+    for hook in hooks:
         va = int(hook["va"], 16)
         assert v013.branch(va) == (hook["kind"], int(hook["previous_target"], 16))
         assert out.branch(va) == (hook["kind"], module.symbols[hook["entry"]])
-    calls = {"og_menu_hook_options": ("og_menu_previous_options", "og_menu_register_options"),
-             "og_menu_hook_parent": ("og_menu_previous_parent", "og_menu_register_parent"),
-             "og_menu_hook_alias": ("og_menu_previous_alias", "og_menu_register_alias")}
-    previous = {h["previous_symbol"]: int(h["previous_target"], 16) for h in _layout()["hooks"]}
-    for entry, (before, register) in calls.items():
-        at = module.symbols[entry]
-        assert out.u32(at) == 0xa9bf7bfd and out.u32(at + 4) == 0x910003fd   # stp x29, x30, [sp, #-16]!; mov x29, sp
-        assert out.branch(at + 8) == ("bl", previous[before]) and out.branch(at + 12) == ("bl", module.symbols[register])
-
-
-def test_composed_filters_handle_only_the_item(composed):
-    module, out = composed
-    previous = {h["entry"]: int(h["previous_target"], 16) for h in _layout()["hooks"]}
-    movz = lambda reg, imm: 0x52800000 | (imm << 5) | reg
-
-    def b_ne(at):
-        word = out.u32(at)
-        assert word & 0xff00001f == 0x54000001
-        imm = (word >> 5) & 0x7ffff
-        return at + 4 * (imm - ((imm & 0x40000) << 1))
-
-    for name, result in (("og_menu_supported", movz(0, 1)), ("og_menu_mapped", 0x2a0103e0)):   # mov w0, #1 / mov w0, w1
-        at = module.symbols[name]
-        assert [out.u32(at + 4 * k) for k in (0, 1)] == [movz(16, MID), 0x6b10003f]   # cmp w1, w16
-        assert b_ne(at + 8) == previous[name] and out.u32(at + 12) == result and out.u32(at + 16) == 0xd65f03c0
-    at = module.symbols["og_menu_apply"]
-    assert out.u32(at + 8) == 0xeb10029f   # cmp x20, x16 (x16 = og_menu_records by adrp/add)
-    assert out.branch(at + 16) == ("b", int(MENU["stock"]["apply_custom"]["va"], 16))
-    assert b_ne(at + 12) == at + 20 and out.branch(at + 20) == ("b", previous["og_menu_apply"])
-    at = module.symbols["og_menu_profile_blocked"]
-    assert out.u32(at) == movz(0, MID) and out.branch(at + 4) == ("b", module.symbols["og_menu_blocked"])
-    at = module.symbols["og_menu_default"]
-    assert [out.u32(at), out.u32(at + 4)] == [0x2a1f03e0, 0xd65f03c0]
-
-
-def test_composed_templates_and_records(composed, menu_host):
-    module, out = composed
-    _, _, records = menu_host
-    leaf, _ = records["leaf"]
-    assert out.bytes(module.symbols["leaf_template"], 0xc0) == leaf
-    profile, _ = records["profile"]
-    assert out.bytes(module.symbols["profile_template"], 0x80) == profile
-    row, _ = records["row0"]
-    assert out.bytes(module.symbols["row_template"], 0x80) == patched(row, {0x00: 0, 0x04: 0, 0x08: 0, 0x34: 0})
-    assert [out.u32(module.symbols["option_text"] + 4 * i) for i in range(3)] == list(OPTION_TEXT)
-    rw = next(s for s in out.loads if s["p_vaddr"] == 0x907f000)
-    records_va = module.symbols["og_menu_records"]
-    assert rw["p_flags"] == 6 and rw["p_vaddr"] <= records_va and records_va + 0x2c0 <= rw["p_vaddr"] + rw["p_memsz"]
-
-
-def test_menu_stock_checks_refuse_another_layout(v013):
-    from a7m4.open_gate import _check_menu_stock
-    lay = _layout()
-    _check_menu_stock(v013.data, v013.elf, v013.loads, lay)
-    tampered = bytearray(v013.data)
-    tampered[v013.offset(int(MENU["registrars"]["leaf"], 16))] ^= 1
-    with pytest.raises(ToolError, match="leaf registrar"):
-        _check_menu_stock(bytes(tampered), v013.elf, v013.loads, lay)
-    moved = json.loads(json.dumps(lay))
-    moved["menu"]["maps"]["alias"]["va"] = "0x7614330"
-    with pytest.raises(ToolError, match="alias map"):
-        _check_menu_stock(v013.data, v013.elf, v013.loads, moved)
+    # og_menu_enabled: cmp w0, #MID; b.ne -> the previous head (custom sounds' Volume filter, then the stock check).
+    at = module.symbols["og_menu_enabled"]
+    assert out.u32(at) == 0x7100001f | (MID << 10)
+    word = out.u32(at + 4)
+    imm = (word >> 5) & 0x7ffff
+    target = at + 4 + 4 * (imm - ((imm & 0x40000) << 1))
+    assert word & 0xff00001f == 0x54000001 and out.branch(target) == ("b", int(hooks[2]["previous_target"], 16))
 
 
 # --- the 68 string banks -----------------------------------------------------------------------------------------------
@@ -841,34 +736,31 @@ def banks():
     return _edit_banks(lambda path: (APP.parent.parent / path).read_bytes(), MENU["strings"])
 
 
-SHORTENED = {"0x0200ab5e", "0x0200ab61", "0x0200ab62", "0x0200ab63"}
-CHINESE = {"simplifiedchinese", "traditionalchinese"}
+REPLACED = {int(k, 16): v for k, v in MENU["strings"]["replace"].items()}
 
 
-def test_every_bank_holds_the_labels_and_keeps_its_size(banks):
+def test_every_bank_names_the_page_setting_and_options(banks):
     assert len(banks) == 68
-    for path, (old, new, evidence) in banks.items():
-        texts = _uxc_texts(new)
-        assert len(new) == len(old), path
-        assert [texts[TEXT[k]] for k in ("title", "uhd_32", "k57_32")] == ["Open Gate", "4K 3:2", "5.7K 3:2"], path
-        assert texts[TEXT["off"]] == _uxc_texts(old)[TEXT["off"]]   # Sony's own Off, unchanged
-        chinese = path.split("_")[1] in CHINESE
-        assert set(evidence["shortened"]) == (SHORTENED - {"0x0200ab5e"} if chinese else SHORTENED), path
-        assert evidence["label_bytes"] == 44 and evidence["freed_bytes"] == (48 if chinese else 44)
-
-
-def test_banks_change_only_the_labels_and_the_listed_texts(banks):
-    rows = {(r["from"], r["to"]) for r in MENU["strings"]["shorten"]}
+    assert REPLACED == {TEXT["page"]: "Open Gate", TEXT["title"]: "Mode", TEXT["uhd_32"]: "4K 3:2",
+                        TEXT["k57_32"]: "5.7K 3:2"}
     for path, (old, new, evidence) in banks.items():
         before, after = _uxc_texts(old), _uxc_texts(new)
-        changed = {rid for rid in before.keys() | after.keys() if before.get(rid) != after.get(rid)}
-        assert changed == {TEXT["title"], TEXT["uhd_32"], TEXT["k57_32"]} | {int(k, 16) for k in evidence["shortened"]}
-        assert all(tuple(pair) in rows for pair in evidence["shortened"].values())
-        records = _uxc_records(new)
-        assert all(start + 4 + len(text) < len(new) for start, _, text in records)
-        last = max(start for start, rid, _ in _uxc_records(old) if f"{rid:#010x}" in evidence["shortened"])
-        tail = min(start for start, _, _ in _uxc_records(old) if start > last)
-        assert new[tail:] == old[tail:], path   # every record after the last shortened one keeps its offset
+        assert len(new) == len(old), path
+        assert {rid: after[rid] for rid in REPLACED} == REPLACED, path
+        assert after[TEXT["off"]] == before[TEXT["off"]]   # Sony's own Off, unchanged
+        assert {rid for rid in before.keys() | after.keys() if before.get(rid) != after.get(rid)} == set(REPLACED), path
+        assert set(evidence["replaced"]) == {f"{rid:#010x}" for rid in REPLACED}
+
+
+def test_banks_change_bytes_only_inside_the_replaced_records(banks):
+    for path, (old, new, _) in banks.items():
+        records = {rid: (start, text) for start, rid, text in _uxc_records(old)}
+        assert {start for start, _, _ in _uxc_records(new)} == {start for start, _, _ in _uxc_records(old)}, path
+        inside = set()
+        for rid in REPLACED:
+            start, text = records[rid]
+            inside |= set(range(start + 4, start + ((4 + len(text) + 1 + 3) & ~3)))
+        assert {i for i in range(len(old)) if old[i] != new[i]} <= inside, path
 
 
 @pytest.mark.skipif(not STOCK_APP.is_dir(), reason="no stock 6.02 tree")
@@ -876,7 +768,7 @@ def test_banks_keep_every_sony_string(banks):
     for path, (old, new, _) in banks.items():
         stock, after = _uxc_texts((STOCK_APP.parent.parent / path).read_bytes()), _uxc_texts(new)
         assert {rid: after.get(rid) for rid in stock} == stock, path
-        assert not {TEXT["title"], TEXT["uhd_32"], TEXT["k57_32"]} & stock.keys()
+        assert not set(REPLACED) & stock.keys()
 
 
 def test_edit_bank_refuses_what_it_cannot_do():
@@ -884,9 +776,7 @@ def test_edit_bank_refuses_what_it_cannot_do():
     if not path.is_file():
         pytest.skip("no v0.1.3 tree")
     data, strings = path.read_bytes(), MENU["strings"]
-    with pytest.raises(ToolError, match="not empty"):
-        _edit_bank(data, strings | {"add": {"0x0200ab5c": "taken"}})
-    with pytest.raises(ToolError, match="No listed text"):
-        _edit_bank(data, strings | {"shorten": [{"id": "0x0200ab61", "from": "other", "to": "x"}]})
-    with pytest.raises(ToolError, match="do not free enough"):
-        _edit_bank(data, strings | {"shorten": strings["shorten"][1:2]})
+    with pytest.raises(ToolError, match="not in the bank"):
+        _edit_bank(data, strings | {"replace": {"0x0200ab51": "Open Gate"}})
+    with pytest.raises(ToolError, match="does not fit"):
+        _edit_bank(data, strings | {"replace": {"0x0200ab5f": "A much longer label"}})

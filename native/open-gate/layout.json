@@ -36,19 +36,18 @@
   "og_reconcile.c": "56efb86ea61ec2c5bbe02604e8beefd9bb7e8123659da8eb9f9d85d24e3c5322",
   "og_mem.c": "aea4f61135959ae1defdb1ff01c18aba16369dabd10857b52a46cff6ff6bcc25",
   "og_util.c": "caf8fdf9e3f29420f44570a22cc0f7167c8a65c01124e529e246615d485e2d47",
-  "og_menu.c": "f34a0fc51623ff7eb7cca129d3e9408a3391e0067bb08c46b7ab8a68366fa885",
+  "og_menu.c": "06d76805caa8d50ff26cbdad84610cbe5346f9cace9a449ca4047824e5429086",
   "og_entry.S": "bb3b1e1ce81ba7aa905b25827627ce5462a714cef81df628fbce2fcd5899004b",
-  "og_menu_entry.S": "8b49a15b307d5e3630f87ed2bf3c432d93a42acdead46679d64c20a0a546e8ca",
   "og_sites.S": "1657b32224cdc6e7d319550bc944486e03552b37a2f33d4da04143ea8795978d",
   "og.h": "747613c420a0b9af624a3fb0d7cc2fca1343349dc86477427f775b7161fd59ae",
   "og_internal.h": "cd6327a82a0479c5543fae75a3d27af9df80ffa6911e7ef3826ed1e49004ef70",
   "og_image.h": "feacf8160b1b28d0def68d423ad2a05a148f4c0ada83366a12a77d9bcd483b91",
   "og_sys.h": "d9376106c89f29fea29f2d374ef87b5dc30692f10920b5c8e18d7471b9d6db8a",
-  "og_menu.h": "625a0fefd7b266db34df8ffcb18c749687361f06f82028ba821c5c215307dc9c"
+  "og_menu.h": "b15ea440f53ae8e56026f15563406d0cdcc740793bb2463e965099781683667a"
  },
  "module": {
-  "text_bytes": 47860,
-  "text_sha256": "b0b556b160cc43597d7282fde7800761bc0c21fa64692b2e403e2b02e3c80806",
+  "text_bytes": 46492,
+  "text_sha256": "bfd2e1b3b32dbca95a5ec86c7326c66579ee5c8c6fdfe164f840af311ee43de6",
   "what": "the linked .text (code, strings, site image) for these sources, designs and compiler"
  },
  "appfw": {
@@ -96,60 +95,12 @@
    "kind": "bl"
   },
   {
-   "va": "0x1732000",
-   "kind": "bl",
-   "previous_target": "0x90108b8",
-   "previous_symbol": "og_menu_previous_options",
-   "entry": "og_menu_hook_options",
-   "what": "option-row map constructor (registrar 0x1cd0fe4; the leaf map's constructor at 0x1731fbc runs earlier in the same function): BL to the aspect feature's option wrapper (stock 6.02: bl 0x1cd0fe4)"
-  },
-  {
-   "va": "0x173210c",
-   "kind": "bl",
-   "previous_target": "0x90108e0",
-   "previous_symbol": "og_menu_previous_parent",
-   "entry": "og_menu_hook_parent",
-   "what": "option-to-leaf map constructor (registrar 0x1cd1934; the profile map's constructor at 0x1732044 runs earlier in the same function): BL to the aspect feature's parent wrapper (stock 6.02: bl 0x1cd1934)"
-  },
-  {
-   "va": "0x1737974",
-   "kind": "bl",
-   "previous_target": "0x9010908",
-   "previous_symbol": "og_menu_previous_alias",
-   "entry": "og_menu_hook_alias",
-   "what": "alias map constructor (registrar 0x1cd2bec; the value map's constructor at 0x1737930 runs earlier in the same function): BL to the aspect feature's alias wrapper (stock 6.02: bl 0x1cd2bec)"
-  },
-  {
-   "va": "0x1c08bc0",
-   "kind": "b",
-   "previous_target": "0x8fb90c8",
-   "previous_symbol": "og_menu_previous_supported",
-   "entry": "og_menu_supported",
-   "what": "menu-item support check (this, w1 = mid), first instruction: B to custom sounds' Volume filter (stock 6.02: stp x29, x30, [sp, #-0x90]!)"
-  },
-  {
-   "va": "0x1c1116c",
-   "kind": "b",
-   "previous_target": "0x8fb90e0",
-   "previous_symbol": "og_menu_previous_mapped",
-   "entry": "og_menu_mapped",
-   "what": "menu-item id map (this, w1 = mid), first instruction: B to custom sounds' Volume filter (stock 6.02: adrp x0, 0x5a24000)"
-  },
-  {
-   "va": "0x1c155e0",
-   "kind": "b",
-   "previous_target": "0x8fb90f8",
-   "previous_symbol": "og_menu_previous_apply",
-   "entry": "og_menu_apply",
-   "what": "apply method, x20 = leaf descriptor, before the native parameter broker: B to custom sounds' Volume filter (stock 6.02: ldr x0, [x19])"
-  },
-  {
    "va": "0x1c14e6c",
    "kind": "b",
    "previous_target": "0x8fb877c",
-   "previous_symbol": "og_menu_previous_blocked",
-   "entry": "og_menu_blocked",
-   "what": "menu-item blocked check (w0 = mid, 1 = greyed), first instruction: B to custom sounds' Volume filter (stock 6.02: stp x29, x30, [sp, #-0x20]!)"
+   "previous_symbol": "og_menu_previous_enabled",
+   "entry": "og_menu_enabled",
+   "what": "menu-item enabled check (w0 = mid, 1 = selectable; callers such as 0x1ba807c open the item only when it is nonzero), first instruction: B to custom sounds' Volume filter (stock 6.02: stp x29, x30, [sp, #-0x20]!)"
   }
  ],
  "camera": {
@@ -173,155 +124,201 @@
   ]
  },
  "menu": {
-  "what": "The Open Gate item: one custom leaf modelled on custom sounds' Volume item (mid 1598), registered by og_menu.c into six native std::map objects from the three registrar hooks, and listed on MENU > Shooting > Media (placement).",
-  "mid": 1600,
-  "placement": {
-   "what": "Appended to Shooting > Media after Display Media Info. as LUT (mid 1589, Color/Tone) and custom sounds (1592/1595, Shutter/Silent) appended theirs: group count +1, a {u64 mid, u64 leaf, u64 page 0} entry in the first free slot, and an R_AARCH64_RELATIVE for the leaf pointer written right after .rela.dyn over the stale copy of the old .rela.plt (DT_JMPREL points at the live one), with DT_RELASZ and the .rela.dyn sh_size +24. DT_RELACOUNT stays: it counts the leading RELATIVE run, which ends where the non-RELATIVE block starts. Image Quality/Rec, next to File Format, holds all 30 of its fixed slots. compose_ap checks every value here before writing.",
-   "tab": {
-    "va": "0x50fbfa8",
-    "header": "02000000936000021000000000000000"
-   },
-   "group": {
-    "va": "0x50fc298",
-    "index": 1,
-    "header": "01000000576000020400000000000000",
-    "mids": [188, 189, 193, 194]
-   },
-   "slot": "0x50fc308",
-   "leaf_symbol": "og_menu_records",
-   "rela_dyn": {
-    "file_offset": "0x101a8",
-    "bytes": "0x1700118",
-    "section_header": "0x5da95d8",
-    "relocation": "0x17102c0",
-    "next_section": ".init"
-   },
-   "dynamic": {
-    "DT_RELASZ": "0x59cf410",
-    "DT_RELACOUNT": "0x59cf460",
-    "relacount": "0xf2c40"
-   }
-  },
-  "alias_base": 5638,
+  "what": "The Open Gate setting takes over the custom firmware's Custom Shutter Sound page (mid 1592) and its switch (mid 1593): the page is renamed Open Gate and listed on MENU > Shooting > Media; both sound pages leave Shooting > Shutter/Silent; the switch keeps only itself on the page, gets a third option row and its callbacks point at og_menu.c. Its mids and option ids are the custom firmware's own, already in every native map and accepted by its id filters (supported/mapped 0x8f900a0/0x8f900b8 for 1592..1597, apply skip 0x8f900d0, option ids 5607..5630 at 0x8fa1000). compose_ap checks every old value here in v0.1.3 before writing.",
+  "page_mid": 1592,
+  "mid": 1593,
+  "alias_base": 5607,
   "text": {
-   "title": "0x0200ab51",
+   "page": "0x0200ab5c",
+   "title": "0x0200ab5f",
    "off": "0x0200a00f",
-   "uhd_32": "0x0200ab52",
-   "k57_32": "0x0200ab53"
+   "uhd_32": "0x0200ab61",
+   "k57_32": "0x0200ab62"
   },
-  "templates": {
-   "what": "v0.1.3 records og_menu.c's rodata templates are copied from; the fields it changes are listed there and checked by tests/test_open_gate.py",
-   "leaf": "0x8ff80a0",
-   "option": "0x8ff8160",
-   "profile": "0x8ff8660"
-  },
-  "registrars": {
-   "leaf": "0x1cd0d90",
-   "option": "0x1cd0fe4",
-   "profile": "0x1cd1238",
-   "parent": "0x1cd1934",
-   "value": "0x1cd29f8",
-   "alias": "0x1cd2bec"
-  },
-  "maps": {
-   "what": "static map objects in appFw.so's .bss; got is the GOT slot the constructor loads it from (R_AARCH64_RELATIVE addend = map)",
-   "leaf": {
-    "va": "0x7614238",
-    "got": "0x5a2c1f8"
+  "groups": {
+   "what": "menu groups: 16-byte header {id, title, count, 0} and 30 entries {u64 mid, u64 leaf, u64 page}",
+   "media": {
+    "va": "0x50fc298",
+    "header": "01000000576000020400000000000000",
+    "mids": [
+     188,
+     189,
+     193,
+     194
+    ]
    },
-   "option": {
-    "va": "0x7614148",
-    "got": "0x59e0b80"
-   },
-   "profile": {
-    "va": "0x7614178",
-    "got": "0x5a27e88"
-   },
-   "parent": {
-    "va": "0x7614208",
-    "got": "0x5a33078"
-   },
-   "value": {
-    "va": "0x76142f8",
-    "got": "0x5a0e0d0"
-   },
-   "alias": {
-    "va": "0x7614328",
-    "got": "0x59fa4c8"
+   "shutter_silent": {
+    "va": "0x50fd3d8",
+    "header": "070000007c6000020d00000000000000",
+    "mids": [
+     325,
+     326,
+     333,
+     335,
+     336,
+     337,
+     338,
+     339,
+     340,
+     342,
+     343,
+     1592,
+     1595
+    ]
    }
   },
-  "stock": {
-   "what": "file bytes each stock function must start with (compose_ap checks them)",
-   "registrar": "fd7bbca9",
-   "native_true": {
-    "va": "0x1c9efbc",
-    "bytes": "20008052c0035fd6"
+  "pages": {
+   "what": "the sound page records: 'listed' is what a group entry points at, 'live' what the page map (0x8fc0a60, registrar 0x1cd148c) holds; +0x60 1, +0x64 child count, children {u64 mid, leaf} from +0x70",
+   "shutter": {
+    "listed": "0x8fc0400",
+    "live": "0x8ff8000",
+    "children": [
+     [
+      1593,
+      1594
+     ],
+     [
+      1593,
+      1594,
+      1598
+     ]
+    ]
    },
-   "apply_custom": {
-    "va": "0x1c15604",
-    "bytes": "804640f9e00200b4"
+   "focus": {
+    "listed": "0x8fc0710",
+    "live": "0x8ff86e0"
    }
   },
-  "strings": {
-   "what": "68 horizontal/vertical UXC banks: the three labels are added at empty index slots; the listed custom-firmware texts are shortened to make room, then the bank is repacked in record order with its size kept",
-   "banks": 68,
-   "add": {
-    "0x0200ab51": "Open Gate",
-    "0x0200ab52": "4K 3:2",
-    "0x0200ab53": "5.7K 3:2"
+  "leaf": {
+   "va": "0x8fc0490",
+   "options": 2,
+   "rows": "0x8fc0610",
+   "help": "0x02008894",
+   "what": "the switch's leaf (0xc0): +0x0c help, +0x54 option count, +0x58 rows (contiguous, 0x80 each)"
+  },
+  "rows": [
+   {
+    "va": "0x8fc0610",
+    "alias": 5607,
+    "text": "off",
+    "was_text": "0x0200a024"
    },
-   "shorten": [
+   {
+    "va": "0x8fc0690",
+    "alias": 5608,
+    "text": "uhd_32",
+    "was_text": "0x0200a00f"
+   },
+   {
+    "va": "0x8fc0710",
+    "alias": 5609,
+    "text": "k57_32",
+    "from": "0x8fc0920",
+    "row_id": "0x001203f0",
+    "what": "new: the focus switch's first row (alias 5609), moved after the other two over the listed focus page's header, which only the Shutter/Silent entry pointed at"
+   }
+  ],
+  "row_fields": {
+   "what": "+0x00/+0x04 alias, +0x08 text, +0x10 help (= text, as native rows without help), +0x20/+0x24 images (none, as native text rows), +0x34 value, +0x74 row id",
+   "text": "0x08",
+   "help": "0x10",
+   "images": "0x20",
+   "value": "0x34",
+   "row_id": "0x74"
+  },
+  "parent_pair": {
+   "va": "0x8f91c80",
+   "old": [
+    5609,
+    1596
+   ],
+   "new": [
+    5609,
+    1593
+   ],
+   "what": "option-to-leaf pair the custom firmware registers (0x8f91c28, registrar 0x1cd1934)"
+  },
+  "profile": {
+   "va": "0x8fc3d28",
+   "what": "the switch's profile; +0x50 is the enabled callback (stock 'return 1' 0x1c9efbc)"
+  },
+  "relocations": {
+   "what": "R_AARCH64_RELATIVE entries changed in place (r_offset, addend); a symbol name is a module symbol. Entries moved to the Media slot's page field duplicate its own and leave no stale pointer behind.",
+   "retarget": [
     {
-     "id": "0x0200ab61",
-     "from": "Use this audio for electronic shutter?",
-     "to": "Use as shutter sound?"
+     "r_offset": "0x50fd500",
+     "addend": "0x8fc0400",
+     "to": "0x50fc318",
+     "new": "0x8fc0400",
+     "what": "Shutter/Silent entry 11 (1592) page -> Media entry 4 page"
     },
     {
-     "id": "0x0200ab62",
-     "from": "Use this audio for focus?",
-     "to": "Use as focus sound?"
+     "r_offset": "0x50fd518",
+     "addend": "0x8fc0710",
+     "to": "0x50fc318",
+     "new": "0x8fc0400",
+     "what": "Shutter/Silent entry 12 (1595) page, now unused"
     },
     {
-     "id": "0x0200ab63",
-     "from": "Restore default focus sound?",
-     "to": "Reset focus sound?"
+     "r_offset": "0x8fc0730",
+     "addend": "0x1c9efbc",
+     "to": "0x50fc318",
+     "new": "0x8fc0400",
+     "what": "listed focus page +0x20, now inside the third row"
     },
     {
-     "id": "0x0200ab5e",
-     "from": "Import from SD",
-     "to": "Import"
+     "r_offset": "0x8fc0788",
+     "addend": "0x8fc07a0",
+     "to": "0x50fc318",
+     "new": "0x8fc0400",
+     "what": "listed focus page child 1596, now inside the third row"
     },
     {
-     "id": "0x0200ab61",
-     "from": "是否将此音频用于电子快门声？",
-     "to": "用作快门声？"
+     "r_offset": "0x8fc0508",
+     "addend": "0x8f97f60",
+     "to": "0x8fc0508",
+     "new": "og_menu_getter",
+     "what": "switch leaf +0x78 getter"
     },
     {
-     "id": "0x0200ab62",
-     "from": "是否将此音频用于对焦声音？",
-     "to": "用作对焦声音？"
+     "r_offset": "0x8fc0510",
+     "addend": "0x8f980d8",
+     "to": "0x8fc0510",
+     "new": "og_menu_setter",
+     "what": "switch leaf +0x80 setter"
     },
     {
-     "id": "0x0200ab63",
-     "from": "是否恢复默认对焦声音？",
-     "to": "恢复默认对焦声音？"
+     "r_offset": "0x8fc0518",
+     "addend": "0x8fb9400",
+     "to": "0x8fc0518",
+     "new": "og_menu_commit",
+     "what": "switch leaf +0x88 commit"
     },
     {
-     "id": "0x0200ab61",
-     "from": "是否將此音訊用於電子快門聲？",
-     "to": "用作快門聲？"
+     "r_offset": "0x8fc0aa8",
+     "addend": "0x8fc0920",
+     "to": "0x8fc0aa8",
+     "new": "0x8fc0710",
+     "what": "option map entry 5609 -> the third row"
     },
     {
-     "id": "0x0200ab62",
-     "from": "是否將此音訊用於對焦聲音？",
-     "to": "用作對焦聲音？"
-    },
-    {
-     "id": "0x0200ab63",
-     "from": "是否恢復預設對焦聲音？",
-     "to": "恢復預設對焦聲音？"
+     "r_offset": "0x8fc3d78",
+     "addend": "0x1c9efbc",
+     "to": "0x8fc3d78",
+     "new": "og_menu_profile_enabled",
+     "what": "switch profile +0x50 enabled callback"
     }
    ]
+  },
+  "strings": {
+   "what": "68 horizontal/vertical UXC banks: the sound page's own texts are rewritten in place (same record, NUL padded); nothing else changes",
+   "banks": 68,
+   "replace": {
+    "0x0200ab5c": "Open Gate",
+    "0x0200ab5f": "Mode",
+    "0x0200ab61": "4K 3:2",
+    "0x0200ab62": "5.7K 3:2"
+   }
   }
  }
 }
