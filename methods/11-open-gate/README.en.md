@@ -1,6 +1,8 @@
 # Open gate: 3:2 full-sensor video, applied at camera start
 
-This local candidate includes the [state and persistence fixes](../../native/open-gate/LOCAL-FIXES.md). It has only been tested offline. Upstream hardware results below describe the original release, not these modifications.
+This fork includes the [state and persistence fixes](../../native/open-gate/LOCAL-FIXES.md). Its installation and two
+short NTSC 5.7K recordings have been checked on one camera; see the [validation scope](../../docs/releases/state-fixes-1.md).
+Upstream hardware results below describe the original release, not broader validation of these modifications.
 
 [Module](../../native/open-gate/README.md) · [Inputs and layout](../../native/open-gate/layout.json) · [Stored record](../../native/open-gate/stored_record.json)
 
@@ -20,8 +22,9 @@ instructions and table entries, changed in memory like the rest. 5.7K is coded w
 kit's duplicate frames, and an HEVC recording's edit list starts at frame 0.
 
 Step 1 (`dmmwb4688_v1`, the taller raw write buffer) is written into `nflasha8/DmmCfg.bin` at build time, so it is
-always on and the kit's cold-boot rule goes away. The C3 de-squeeze cycle is not included. Off puts every site back
-to stock without a power cycle. The camera's NTSC/PAL setting is detected on the camera from its stored drive-parameter
+always on. The C3 de-squeeze cycle is not included. Off restores runtime sites after its setting is saved; the
+larger on-disk buffer and custom firmware remain installed. Cold-reset recovery after a fault still applies.
+The camera's NTSC/PAL setting is detected on the camera from its stored drive-parameter
 record; a camera matching neither is left untouched.
 
 ## Menu item

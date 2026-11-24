@@ -1,7 +1,8 @@
-# Local offline candidate
+# Open-gate state and persistence fixes
 
-Based on `2b96e29b78954945459faeca17b99bc69315afce`, on branch `local/open-gate-state-fixes`.
-No camera installation or hardware acceptance has been performed. The published release's hardware claims do not apply to this working copy.
+Based on `2b96e29b78954945459faeca17b99bc69315afce`; firmware implementation commit `1747e460a3e6a51b64a6d2a0b7c71666d1d56ec5`.
+Installed on one ILCE-7M4, with two short NTSC 5.7K recordings verified. Hardware fault cases and broader operating
+conditions remain untested. See the [dated validation scope](../../docs/releases/state-fixes-1.md).
 
 ## Behavior
 
@@ -27,4 +28,4 @@ To run, provide `OG_DESIGNS`, `OG_V013_DEV`, `OG_602_DEV`, and `OG_ZIG`, then ru
 python -m pytest tests/test_open_gate.py
 ```
 
-The container verifier test additionally uses `A7M4_V013_DAT`. These tests do not call USB or camera tools. They do not prove live menu rendering, the timing of Sony's startup hooks, recording-button behavior, sleep/wake operation, or recovery after an interrupted flash. No installable modified firmware package is produced by the tests.
+The container verifier test additionally uses `A7M4_V013_DAT`. These tests do not call USB or camera tools. They do not prove the timing of Sony's startup hooks, recording-button behavior under faults, sleep/wake operation, or recovery after an interrupted flash. The separately built package and limited recording tests are documented in the linked validation scope.

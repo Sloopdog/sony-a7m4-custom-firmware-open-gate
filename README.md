@@ -1,6 +1,10 @@
-# Sony A7 IV custom firmware with open gate
+# Sony A7 IV open gate — Sloopdog fork
 
-> **Local offline fixes:** this working copy is based on `2b96e29`. It is not the published release, has not been installed or tested on a camera, and must not be treated as camera-validated. See [local changes](native/open-gate/LOCAL-FIXES.md).
+This fork adds active-state reporting, durable mode selection and failure handling to
+[leogenot's open-gate fork](https://github.com/leogenot/sony-a7m4-custom-firmware-open-gate) at `2b96e29`.
+The build was installed on one ILCE-7M4 and two short NTSC 5.7K recordings were verified on November 24, 2026.
+See [changes](native/open-gate/LOCAL-FIXES.md), [test scope](docs/releases/state-fixes-1.md) and
+[quick start, anamorphic preview and LUT import](docs/OPEN-GATE-QUICKSTART.md).
 
 [Erlla's custom firmware v0.1.3](https://github.com/Erlla/sony-a7m4-custom-firmware) for the Sony A7 IV (ILCE-7M4),
 with **open gate** added: 4K 3:2 and 5.7K 3:2 video from the whole sensor, set from the camera's menu. The **custom
@@ -10,8 +14,9 @@ became the Open Gate page.
 > [!CAUTION]
 > **Experimental, unofficial firmware. Use entirely at your own risk.**
 >
-> - **Tested on one camera so far.** On an A7 IV set to NTSC and then to PAL, 4K 3:2 and 5.7K 3:2 apply from the menu
->   and record files at their full size.
+> - **Limited testing on one camera:** this fork's two short NTSC 5.7K clips passed full decode and timing checks.
+>   4K on this installed build, PAL, long recording, HDMI framing, restart persistence and hardware fault recovery
+>   remain unverified. Upstream's broader results do not establish acceptance of these changes.
 > - Installing it can **permanently brick the camera**, cause boot loops or malfunctions, destroy photos, videos,
 >   settings or calibration, and **void the warranty** or make Sony refuse repairs.
 > - It is provided **"as is", with no warranty of any kind**. The authors and contributors **accept no responsibility
@@ -31,8 +36,10 @@ Erlla's original README: [English](README.en.md) · [中文](README.zh-CN.md)
 
 | What | Where |
 | --- | --- |
-| The installable package | `BODYDATA.DAT` on the release [`v0.1.3-open-gate-1.0`](https://github.com/leogenot/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate-1.0), SHA-256 `5ae4dc9e09d2f6eaee6ac84f3990dde2f7bdcd137a07d32341957d389b521a86` |
-| The same build, unbundled | [sony-a7m4-open-gate-firmware](https://github.com/leogenot/sony-a7m4-open-gate-firmware): the 70 changed files and a script that bundles them into v0.1.3's package |
+| This fork's experimental package | [`v0.1.3-open-gate-state-fixes.1`](https://github.com/Sloopdog/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate-state-fixes.1): `BODYDATA.DAT`, `SHA256SUMS` and `VALIDATION.json` |
+| Package SHA-256 | `6b303b050e12d0bb19af3a406ee6820ce90c0be5f2f3307249d42da0ce44c536` (757,480,856 bytes) |
+| Source and test scope | [Release documentation](docs/releases/state-fixes-1.md); the release tag includes the firmware implementation and subsequent documentation/host-helper changes |
+| Original upstream release | [leogenot's v0.1.3-open-gate-1.0](https://github.com/leogenot/sony-a7m4-custom-firmware-open-gate/releases/tag/v0.1.3-open-gate-1.0), without this fork's state-handling changes |
 | The install tool | `M4_1.03_Windows_x64.zip` from Erlla's [v0.1.3 release](https://github.com/Erlla/sony-a7m4-custom-firmware/releases/tag/A7M4-ToolKit-v0.1.3) |
 | The install tool on a Mac | `ZM4-release-v1.0.3.dmg` from [Hippasu/A7m4-Z4M-firmware-for-mac](https://github.com/Hippasu/A7m4-Z4M-firmware-for-mac/releases/latest) (third party, Apple Silicon only) |
 
@@ -68,7 +75,8 @@ its steps instead of steps 2 and 3 below; the update on the camera (step 4) is t
 `BODYDATA.DAT`: that one is Erlla's v0.1.3 itself (SHA-256 `cfb79295…`), without open gate, so put **this build's**
 `BODYDATA.DAT` on the card. If macOS
 says the app is damaged, see the quarantine fix in [its README](https://github.com/Hippasu/A7m4-Z4M-firmware-for-mac#mac常见问题).
-ZM4 isn't part of this project and hasn't been tested with this build.
+ZM4 is a separate third-party project. Version 1.0.3 completed its six preparation steps for this build on one
+Apple Silicon Mac; the operator then reported a completed on-camera update and normal USB operation was verified.
 
 **Steps**
 1. Copy `BODYDATA.DAT` to the **root of the card in slot 1**, not in a folder, and put the card in the camera.
@@ -83,11 +91,13 @@ ZM4 isn't part of this project and hasn't been tested with this build.
    target version (Erlla's guide shows 6.02 -> custom 6.01, the custom firmware's label), choose **执行** (Execute),
    and wait for the camera to restart. Start within the time the tool shows, about 10 minutes. **Once the update
    starts, don't turn the camera off or take the card out, even if the tool's countdown runs out.**
-5. After the restart, check that the camera shoots, saves and plays back. Reconnect USB and click **更新已结束** (update
-   finished). Click **恢复普通 USB** (restore normal USB) to get the camera's normal USB connection back.
+5. After the restart, check that the camera operates normally. Reconnect USB and finish the tool's update/USB recovery
+   steps (ZM4 1.0.3 labels its button **USB 恢复**). A 5.7K file may not play in-camera; verify it on the computer.
+   Begin recording checks with 4K before testing 5.7K. Do not infer recording success from installer progress alone.
 
-**Going back to official firmware:** install a newer official Sony package with Sony's own update procedure; see
-[Restore official firmware](no-fastboot-install/README.en.md) in Erlla's guide.
+**Going back to official firmware:** see [Restore official firmware](no-fastboot-install/README.en.md) in Erlla's guide.
+Rollback and recovery from an unbootable camera were not tested for this fork. A settings backup or updater-partition
+backup is not a complete device recovery image.
 
 ## Features and how to use them
 
@@ -108,7 +118,8 @@ ZM4 isn't part of this project and hasn't been tested with this build.
   Sony's own XML inside the file still says 3840x2160.
 - 5.7K is coded with I and P pictures only, which removes the duplicate (held) frames. The camera plays 4K 3:2 files
   back, but not 5.7K.
-- The rear screen shows the whole 3:2 picture with focus frames. There's no de-squeeze preview.
+- The rear screen shows the 3:2 picture with focus frames. **The temporary kit's C3 anamorphic de-squeeze cycle is not
+  included.** Use an external monitor's matching squeeze ratio for preview; see the [quick start](docs/OPEN-GATE-QUICKSTART.md).
 - **Off** restores runtime patch sites after the setting is saved successfully. It does not uninstall custom firmware or undo the larger on-disk raw buffer.
 - **Reset in stills** is a status, not another recording mode. It means the runtime state is unverified or an operation failed. Stop recording, power off, remove the battery for 10 seconds, then restart in stills.
 - Failed menu operations latch this status and stop further patch attempts in that process. There is no added recording-button lock or popup; the status must be checked before recording. If it persists after a cold restart, stop the test.
@@ -174,7 +185,8 @@ Automatic. Keeps the capabilities and speed profiles the lens reports instead of
 
 The open-gate changes come from [ArcaneLantern/a7iv-open-gate-test](https://github.com/ArcaneLantern/a7iv-open-gate-test)
 (at `2f2a021`), a USB kit that writes them into camera memory for one power-on. This build does the same writes from
-inside the camera, so no USB session or cold boot is needed and the mode survives power-offs.
+inside the camera, so mode changes need no USB session. The saved choice is restored when the camera starts in
+stills and successfully verifies/applies it; movie-mode startup does not apply patches.
 
 ```mermaid
 flowchart LR
@@ -229,7 +241,9 @@ Details: [the open-gate method](methods/11-open-gate/README.en.md) · [the modul
 
 ## Build it yourself
 
-The build is reproducible: the same inputs give the same `BODYDATA.DAT`, byte for byte.
+The builder checks pinned inputs and writes a package verification report. The published download is the exact
+package used for the documented short-clip tests; this fork has not independently established reproducibility on
+every supported host platform.
 
 You need:
 - Erlla's v0.1.3 [`BODYDATA.DAT`](https://github.com/Erlla/sony-a7m4-custom-firmware/releases/download/A7M4-ToolKit-v0.1.3/BODYDATA.DAT),
@@ -242,7 +256,7 @@ You need:
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -e ".[firmware,test]"
-.venv/bin/python -m a7m4.open_gate build --base BODYDATA-custom-v0.1.3.DAT \
+.venv/bin/python tools/build_open_gate_bounded.py build --base BODYDATA-custom-v0.1.3.DAT \
     --designs <kit>/windows/tools/modding/designs --zig <zig-0.15.2>/zig \
     --private-key keys/published/A7M4_updater_private.pem \
     --public-key keys/published/A7M4_updater_public.pem --output out/open-gate
@@ -251,6 +265,10 @@ python3 -m venv .venv
 The output folder gets `BODYDATA.DAT` and `verification.json`: every input and output hash, the changed files and
 byte ranges, the module's symbols, the signature check and the package audit. Any input that doesn't match its pinned
 hash stops the build.
+
+The host wrapper above reuses the existing builder and collects ExtFS reference cycles after each replacement.
+It reduces retained host memory without changing firmware transformations or verification checks. Keep enough free
+disk space for extracted images, output and swap; the builder can take substantially more space than the final DAT.
 
 Offline checks: `python -m pytest tests/test_open_gate.py`. They test the site image against the designs and v0.1.3's
 files, run the module's C code on the host against fake memory, and check the composed `appFw.so` and all 68 string
