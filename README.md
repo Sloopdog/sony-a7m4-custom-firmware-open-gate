@@ -8,8 +8,8 @@ became the Open Gate page.
 > [!CAUTION]
 > **Experimental, unofficial firmware. Use entirely at your own risk.**
 >
-> - **Tested on one camera so far.** On an A7 IV set to NTSC, 4K 3:2 and 5.7K 3:2 apply from the menu and record
->   files at their full size. It has not been run on a camera set to PAL.
+> - **Tested on one camera so far.** On an A7 IV set to NTSC and then to PAL, 4K 3:2 and 5.7K 3:2 apply from the menu
+>   and record files at their full size.
 > - Installing it can **permanently brick the camera**, cause boot loops or malfunctions, destroy photos, videos,
 >   settings or calibration, and **void the warranty** or make Sony refuse repairs.
 > - It is provided **"as is", with no warranty of any kind**. The authors and contributors **accept no responsibility
@@ -286,7 +286,7 @@ workspace defaults.
 3. **Your risk, your responsibility.** You use the software entirely at your own risk and are solely responsible for
    your decision to use it, for following the instructions correctly, for backing up your camera and data, and for any
    consequence. If it fails, you bear the whole cost of any servicing, repair or correction.
-4. **Experimental and barely tested.** This build has been run on one camera, set to NTSC. It changes how the
+4. **Experimental and barely tested.** This build has been run on one camera, set to NTSC and PAL. It changes how the
    camera's processors, encoder and file writer work, outside what Sony designed and tested. Behaviour may be wrong or
    unsafe, including overheating, freezes, corrupted or unplayable recordings and failed boots. Don't rely on it for
    paid, important or unrepeatable work.
